@@ -1,0 +1,13 @@
+# A2 - brute-force SSH (znany z CIC-IDS2017/GeNIS). MITRE T1110.001 Password Guessing.
+# Powtarzane próby logowania na konto testowe serwera ssh (labuser).
+name: A2_ssh_bruteforce
+type: ssh_bruteforce
+mitre: T1110.001
+attacker: o3
+targets: [ssh]
+tool: patator
+params:
+  user: labuser
+  wordlist: wordlists/ssh_passwords.txt   # względem katalogu attacks/
+  threads: 4                 # mała współbieżność, żeby nie przeciążyć sshd
+  rate_limit_s: 0.3          # odstęp między próbami

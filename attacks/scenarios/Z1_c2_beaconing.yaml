@@ -1,0 +1,16 @@
+# Z1 - C2 beaconing (ZERO-DAY, nieobecny w treningu). MITRE T1071.001 App Layer Protocol: Web.
+# Zainfekowany host „melduje się” do zewnętrznego C2 w regularnych, zaszumionych odstępach (jitter),
+# opcjonalnie z okresową eksfiltracją (POST). Wzorcem przypomina legalny heartbeat IoT - to celowe (PB4).
+# Klasa Bot ARES (CIC-IDS2017) jest usunięta z treningu - poza zakresem (GeNIS nie ma C2), więc ten atak jest naprawdę niewidziany.
+name: Z1_c2_beaconing
+type: c2_beaconing
+mitre: T1071.001
+attacker: o3                 # zainfekowana stacja wewnętrzna
+targets: [c2]               # zewnętrzny serwer C2 (203.0.113.12)
+tool: beacon
+params:
+  count: 7                   # liczba check-inów (× interval ≈ 5 min na wystąpienie)
+  interval: 45               # bazowy odstęp [s] - realistyczny beaconing w czasie rzeczywistym (vary_params zmienia ±25%)
+  jitter: 0.2                # jitter jako ułamek odstępu (20%)
+  exfil_every: 3             # co 3. beacon POST „eksfiltracji”
+  exfil_bytes: 4096

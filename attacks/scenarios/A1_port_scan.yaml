@@ -1,0 +1,13 @@
+# A1 - skan portów (znany z CIC-IDS2017/GeNIS). MITRE T1046 Network Service Discovery.
+# Zainfekowany host skanuje porty serwerów, szukając usług.
+name: A1_port_scan
+type: port_scan
+mitre: T1046
+attacker: o3                 # host startowy (zainfekowany)
+targets: [web, dns, ssh, files, mail]
+tool: nmap
+params:
+  scan_flags: "-sS"          # SYN scan jak w CIC
+  ports: "1-1024"
+  timing: "-T3"              # wolniej = trudniejsze do wykrycia, mniej obciąża CPU
+  extra: "--max-rate 300"    # limit tempa, żeby nie dławić Mininetu

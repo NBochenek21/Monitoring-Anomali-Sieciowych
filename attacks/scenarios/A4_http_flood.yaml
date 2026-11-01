@@ -1,0 +1,13 @@
+# A4 - HTTP flood (znany z CIC-IDS2017/GeNIS). MITRE T1499.002 Service Exhaustion Flood.
+# Masa krótkich żądań GET z losowymi parametrami do jednego celu (wzorzec Hulk/GoldenEye).
+# Własne narzędzie attacks/tools/http_flood.py z twardymi limitami (wykrywalny wzorzec, nie realne przeciążenie).
+name: A4_http_flood
+type: http_flood
+mitre: T1499.002
+attacker: atk
+targets: [web]
+tool: http_flood
+params:
+  duration: 15               # czas ataku [s]
+  threads: 30
+  rps: 300                   # górny pułap żądań/s (łącznie)

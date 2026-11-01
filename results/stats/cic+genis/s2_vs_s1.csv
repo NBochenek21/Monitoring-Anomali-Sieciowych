@@ -1,0 +1,5 @@
+model,sessions,fpr_mean_difference,fpr_lower_in,recall_mean_difference,recall_higher_in
+FT,6,-0.257,6,-0.001,0
+IF,6,-0.046,6,0.68,6
+RF,6,-0.469,6,0.0,0
+baseline,6,0.008,0,0.241,6

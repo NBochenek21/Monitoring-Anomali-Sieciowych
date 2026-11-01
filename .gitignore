@@ -1,0 +1,30 @@
+# Dane (opis w Notion)
+data/
+*.pcap
+*.pcapng
+*.pcap.gz
+*.parquet
+
+# Sekrety
+*.license
+.env
+
+# Artefakty modeli i wyniki pośrednie
+models/artifacts/
+results/raw/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Logi i pliki tymczasowe
+*.log
+*.tmp
+
+# System
+.DS_Store
+Thumbs.db
+desktop.ini

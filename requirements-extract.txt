@@ -1,0 +1,8 @@
+# Środowisko ekstrakcji, etykiet, ruchu i ataków (systemowy python3, WSL2 Ubuntu 22.04, Python 3.10).
+# Dotyczy: env/, traffic/, attacks/, features/extract_flows.py, features/label_*.py, features/check_labels.py.
+nfstream==6.6.0
+pandas==2.3.3
+numpy==2.2.6
+pyarrow==25.0.1
+aiosmtpd==1.4.6
+PyYAML==5.4.1

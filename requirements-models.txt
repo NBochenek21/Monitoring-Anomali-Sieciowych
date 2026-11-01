@@ -1,0 +1,12 @@
+# Środowisko modeli, statystyki i dashboardu (/root/venvs/ft, Python 3.10).
+# Dotyczy: models/, stats/, app/.
+scikit-learn==1.6.1
+tensorflow==2.21.0
+keras==3.12.4
+pandas==2.2.3
+numpy==2.2.6
+scipy==1.15.3
+pyarrow==25.0.1
+joblib==1.6.0
+dash==4.4.1
+plotly==7.1.0

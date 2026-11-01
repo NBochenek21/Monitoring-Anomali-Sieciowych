@@ -1,0 +1,399 @@
+/* Dash wczytuje ten plik automatycznie (folder assets obok dashboard.py) */
+
+:root {
+    --bg: #f4f6f9;
+    --panel: #ffffff;
+    --raised: #eef1f5;
+    --border: #d9dee5;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --red: #dc2626;
+    --yellow: #d97706;
+    --green: #16a34a;
+    /* czcionki systemowe: dashboard działa offline, bez pobierania fontów */
+    --sans: "Segoe UI", Arial, sans-serif;
+    --mono: Consolas, "Cascadia Mono", monospace;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+}
+
+/* układ: pasek boczny + treść */
+.app {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+}
+
+.sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 20px 0;
+}
+
+.brand-block {
+    padding: 0 20px 18px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.brand {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.brand-meta {
+    color: var(--muted);
+    font-size: 12px;
+    font-family: var(--mono);
+    line-height: 1.6;
+}
+
+/* nawigacja w pasku bocznym */
+.nav label {
+    display: block;
+    padding: 9px 20px;
+    color: var(--muted);
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    margin: 0;
+}
+
+.nav label:hover {
+    color: var(--text);
+    background: var(--raised);
+}
+
+.nav input {
+    display: none;
+}
+
+.nav label:has(input:checked) {
+    color: var(--text) !important;
+    font-weight: 600;
+    border-left-color: var(--text);
+    background: var(--raised);
+}
+
+.main {
+    padding: 18px 24px 40px;
+    min-width: 0;
+}
+
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+/* pasek sterowania */
+.toolbar {
+    display: flex;
+    align-items: flex-end;
+    gap: 28px;
+    flex-wrap: wrap;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+}
+
+/* podpisy kontrolek, metryk i sekcji: jeden styl */
+.control-label,
+.kpi-title {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+.session-time {
+    flex: 1;
+    min-width: 260px;
+}
+
+/* przełączniki: model, tempo, filtr */
+.segmented {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px;
+}
+
+.segmented label {
+    padding: 5px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--muted);
+    margin: 0;
+}
+
+.segmented label:hover {
+    color: var(--text);
+}
+
+.segmented input {
+    display: none;
+}
+
+.segmented label:has(input:checked) {
+    background: var(--raised);
+    color: var(--text) !important;
+    font-weight: 600;
+}
+
+/* Dash 4 koloruje zaznaczone opcje na fioletowo; tutaj zostają w kolorze tekstu */
+.nav label *,
+.segmented label * {
+    color: inherit !important;
+}
+
+/* przyciski odtwarzania: aktywny ma odwrócone kolory */
+.buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.button {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 14px;
+    font-family: var(--sans);
+    cursor: pointer;
+}
+
+.button:hover {
+    color: var(--text);
+    border-color: var(--muted);
+}
+
+.button.active {
+    background: var(--text);
+    border-color: var(--text);
+    color: var(--bg);
+    font-weight: 600;
+}
+
+/* suwak czasu sesji */
+.progress-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 31px;
+}
+
+.seek {
+    flex: 1;
+}
+
+.seek .dash-slider-track {
+    background: var(--border) !important;
+    height: 4px !important;
+}
+
+.seek .dash-slider-range {
+    background: var(--muted) !important;
+}
+
+.seek .dash-slider-thumb {
+    background: var(--text) !important;
+    border: 2px solid var(--bg) !important;
+}
+
+.seek .dash-slider-mark {
+    color: var(--muted) !important;
+    font-family: var(--mono);
+    font-size: 11px;
+}
+
+.seek .dash-slider-tooltip {
+    background: var(--raised) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border);
+    font-family: var(--mono);
+}
+
+#clock-label {
+    font-family: var(--mono);
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+/* liczby: jeden pasek z podziałami */
+.kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 0;
+}
+
+.kpi {
+    padding: 0 20px;
+    border-left: 1px solid var(--border);
+}
+
+.kpi:first-child {
+    padding-left: 0;
+    border-left: none;
+}
+
+.kpi-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+/* tytuł widoku z filtrem po prawej */
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin: 18px 0 12px;
+}
+
+.page-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.page-body {
+    padding: 16px;
+}
+
+.hint {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 10px;
+    line-height: 1.5;
+}
+
+/* tabele */
+.dash-spreadsheet-container .dash-spreadsheet-inner td {
+    font-family: var(--mono) !important;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* liczby w tabelach wyrównane do prawej (czas, port, wynik, metryki) */
+.dash-spreadsheet-inner td[data-dash-column="czas [s]"],
+.dash-spreadsheet-inner td[data-dash-column="port"],
+.dash-spreadsheet-inner td[data-dash-column="wynik"],
+.dash-spreadsheet-inner td[data-dash-column="PR-AUC"],
+.dash-spreadsheet-inner td[data-dash-column="precision"],
+.dash-spreadsheet-inner td[data-dash-column="recall"],
+.dash-spreadsheet-inner td[data-dash-column="F1"],
+.dash-spreadsheet-inner td[data-dash-column="FPR"],
+.dash-spreadsheet-inner td[data-dash-column="FPR IoT"],
+.dash-spreadsheet-inner td[data-dash-column="sesje"],
+.dash-spreadsheet-inner td[data-dash-column="start [s]"],
+.dash-spreadsheet-inner td[data-dash-column="baseline"],
+.dash-spreadsheet-inner td[data-dash-column="IF"],
+.dash-spreadsheet-inner td[data-dash-column="RF"],
+.dash-spreadsheet-inner td[data-dash-column="FT"] {
+    text-align: right !important;
+}
+
+.dash-spreadsheet-container .dash-spreadsheet-inner tr:hover td.dash-cell {
+    background-color: var(--raised) !important;
+}
+
+.dash-spreadsheet-container .dash-spreadsheet-inner th.dash-filter input {
+    background: var(--bg) !important;
+    color: var(--text) !important;
+    font-family: var(--mono);
+    font-weight: 400 !important;
+    text-align: left !important;
+    padding-left: 8px !important;
+}
+
+.dash-spreadsheet-container .dash-spreadsheet-inner th.dash-filter input::placeholder {
+    color: var(--muted);
+}
+
+.dash-spreadsheet-container .dash-spreadsheet-inner .column-header--sort {
+    color: var(--muted) !important;
+}
+
+.previous-next-container {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 13px;
+}
+
+.previous-next-container button {
+    background: transparent !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 4px;
+}
+
+.previous-next-container input {
+    background: var(--bg) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+}
+
+/* małe ekrany: pasek boczny zamienia się w pasek u góry */
+@media (max-width: 900px) {
+    .app {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding: 14px 0 0;
+    }
+
+    .brand-block {
+        margin-bottom: 0;
+    }
+
+    .nav {
+        display: flex;
+        overflow-x: auto;
+    }
+
+    .nav label {
+        border-left: none;
+        border-bottom: 2px solid transparent;
+        padding: 10px 16px;
+        white-space: nowrap;
+    }
+
+    .nav label:has(input:checked) {
+        border-bottom-color: var(--text);
+    }
+
+    .main {
+        padding: 16px;
+    }
+
+    .segmented {
+        flex-wrap: wrap;
+    }
+
+    .kpi-strip {
+        grid-template-columns: repeat(2, 1fr);
+        row-gap: 14px;
+    }
+
+    .kpi,
+    .kpi:first-child {
+        padding: 0 12px;
+        border-left: none;
+    }
+}

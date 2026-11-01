@@ -1,0 +1,15 @@
+# A3 - wolny DoS (znany z CIC-IDS2017/GeNIS). MITRE T1499.002 Service Exhaustion Flood.
+# Atakujący zewnętrzny otwiera wiele połączeń HTTP i podtrzymuje je niedokończonymi żądaniami,
+# aż wyczerpie pulę połączeń serwera (web ma MaxRequestWorkers=20).
+name: A3_slow_dos
+type: dos_slow
+mitre: T1499.002
+attacker: atk                # host zewnętrzny (203.0.113.13)
+targets: [web]
+tool: slowhttptest
+params:
+  mode: "-H"                 # -H = slowloris (nagłówki); -B = slow body
+  connections: 200
+  rate: 50                   # nowych połączeń na sekundę
+  interval: 10               # odstęp między danymi follow-up [s]
+  duration: 20               # czas ataku [s]
