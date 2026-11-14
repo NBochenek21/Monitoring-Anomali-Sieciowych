@@ -14,3 +14,6 @@ echo "patator:      $(patator --version 2>&1 | head -1 || dpkg -s patator | grep
 echo "slowhttptest: $(slowhttptest -h 2>&1 | grep -i version | head -1 || dpkg -s slowhttptest | grep -i version)"
 python3 -c "import yaml, paramiko; print('pyyaml + paramiko OK')"
 # A4 (HTTP flood) i Z1 (C2 beaconing) używają własnych narzędzi w attacks/tools/ (tylko stdlib).
+
+# ostatni skrypt instalacji: porównanie wersji apt z tymi, w których powstały wyniki pracy
+bash "$(dirname "$0")/../env/setup/check_versions.sh" || echo "Wersje różnią się od apt-versions.txt (szczegóły wyżej)."

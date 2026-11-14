@@ -1,0 +1,29 @@
+# Wersje pakietów apt środowiska, w którym nagrano sesje M0-M6 (4-5.11.2026) i policzono wyniki.
+# Odczyt: dpkg-query w WSL2, Ubuntu 22.04.5 LTS, jądro 6.18.54.1-microsoft-standard-WSL2, 11.11.2026.
+# Skrypty instalacyjne nie przypinają tych wersji (pakiet=wersja), bo Ubuntu usuwa z repozytorium
+# starsze wersje po aktualizacji bezpieczeństwa i instalacja by się nie udała. Zamiast tego
+# env/setup/check_versions.sh porównuje zainstalowane wersje z tym plikiem i wypisuje różnice.
+# Format: pakiet<TAB>wersja
+apache2	2.4.52-1ubuntu4.25
+curl	7.81.0-1ubuntu1.30
+dnsmasq	2.91-0ubuntu0.22.04.2
+dnsutils	1:9.18.39-0ubuntu0.22.04.7
+ethtool	1:5.16-1ubuntu0.2
+iproute2	5.15.0-1ubuntu2.2
+iputils-ping	3:20211215-1ubuntu0.1
+libpcap0.8	1.10.1-4ubuntu1.22.04.2
+mininet	2.3.0-1ubuntu1
+net-tools	1.60+git20181103.0eebece-1ubuntu5.4
+nmap	7.91+dfsg1+really7.80+dfsg1-2ubuntu0.1
+openssh-client	1:8.9p1-3ubuntu0.18
+openssh-server	1:8.9p1-3ubuntu0.18
+openvswitch-switch	2.17.12-0ubuntu0.22.04.1
+patator	0.9-3build1
+python3	3.10.6-1~22.04.1
+python3-paramiko	2.9.3-0ubuntu1.3
+python3-pip	22.0.2+dfsg-1ubuntu0.7
+python3-venv	3.10.6-1~22.04.1
+python3-yaml	5.4.1-1ubuntu1
+slowhttptest	1.8.2-1build1
+tcpdump	4.99.1-3ubuntu0.2
+wireshark-common	3.6.2-2

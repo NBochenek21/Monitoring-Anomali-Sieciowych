@@ -1,6 +1,6 @@
 # Detekcja anomalii w ruchu sieciowym: klasyczne ML vs FlowTransformer
 
-Kod do pracy inżynierskiej „Wykorzystanie algorytmów uczenia maszynowego oraz modeli transformatorowych w detekcji anomalii w ruchu sieciowym”.
+Kod do pracy inżynierskiej „Wykorzystanie algorytmów uczenia maszynowego oraz modeli typu transformer w detekcji anomalii w ruchu sieciowym”.
 
 Emulowana sieć małej firmy (Mininet) z ruchem normalnym i atakami, nagrywanie na routerze, przepływy NFStream z etykietami (jedna reguła dla Mininetu, CIC-IDS2017 i GeNIS), cztery detektory (baseline progowy, Isolation Forest, Random Forest, FlowTransformer) w scenariuszach S0/S1/S2, statystyczne porównanie modeli i dashboard Dash w trybie replay.
 
@@ -15,10 +15,11 @@ Emulowana sieć małej firmy (Mininet) z ruchem normalnym i atakami, nagrywanie 
 | `models/` | modele, scenariusze S0/S1 (`run_experiments.py`) i S2 (`run_s2.py`); `FlowTransformer/` to kod autorów (AGPL-3.0, pochodzenie w `ZRODLO.md`) |
 | `stats/` | porównanie modeli po sesjach (średnia ± 95% przedział ufności, wyniki per sesja, recall per atak, S2 wobec S1) i realizm ruchu |
 | `app/` | dashboard Dash |
+| `praca/` | tekst pracy w LaTeX-u: klasa `aghdpl` (P. Kłeczek i in., https://github.com/pkleczek-agh/aghdpl) ze stroną tytułową według wzoru WIEiT; `przyklady/` to oryginalne pliki przykładowe szablonu |
 
 ## Uruchomienie
 
-Windows 11 + WSL2 (`Ubuntu-22.04`, użytkownik root). Instalacja w tej kolejności: `env/setup/install_wsl_packages.sh`, `env/setup/install_services.sh`, `attacks/install_attack_tools.sh` (wersje pakietów przypięte w skryptach). Dwa środowiska Pythona 3.10: ekstrakcja, etykiety, ruch i ataki w systemowym `python3` (`requirements-extract.txt`), a modele, statystyka i dashboard w `/root/venvs/ft/bin/python` (`requirements-models.txt`).
+Windows 11 + WSL2 (`Ubuntu-22.04`, użytkownik root). Instalacja w tej kolejności: `env/setup/install_wsl_packages.sh`, `env/setup/install_services.sh`, `attacks/install_attack_tools.sh`. Wersje pakietów Pythona są przypięte w `requirements-*.txt`; wersji apt nie da się trwale przypiąć (Ubuntu usuwa stare wersje z repozytorium), więc wersje, w których powstały wyniki, są zapisane w `env/setup/apt-versions.txt`, a `env/setup/check_versions.sh` porównuje z nimi instalację (wywołuje go ostatni skrypt). Nagrania używają `/usr/bin/tcpdump` (tcpdump z Ubuntu). Dwa środowiska Pythona 3.10: ekstrakcja, etykiety, ruch i ataki w systemowym `python3` (`requirements-extract.txt`), a modele, statystyka i dashboard w `/root/venvs/ft/bin/python` (`requirements-models.txt`).
 
 Wszystkie komendy uruchamia się w WSL jako root, z katalogu głównego repozytorium:
 
@@ -46,10 +47,13 @@ bash features/record_all.sh
 bash features/record_all.sh M1           # tylko jedna sesja
 ```
 
+Sesja, która przeszła kontrolę etykiet, dostaje znacznik `/root/sessions/<sesja>/OK` i przy kolejnym uruchomieniu jest pomijana; sesja bez znacznika jest nagrywana od nowa.
+
 ### 3. Przepływy, etykiety i ich kontrola (jedna sesja krok po kroku)
 
 ```bash
 python3 features/test_extract_flows.py   # test zamykania przepływów TCP na syntetycznych PCAP-ach
+python3 features/test_labels_windows.py  # test reguły etykiet (z granicami okna), regularności połączeń i okien FT bez look-ahead
 python3 features/extract_flows.py --pcap /root/sessions/M1/capture.pcap --out /root/sessions/M1/flows
 python3 features/label_flows.py --flows /root/sessions/M1/flows --ground-truth /root/sessions/M1/ground_truth.jsonl --out /root/sessions/M1/labeled.parquet
 python3 features/check_labels.py --labeled /root/sessions/M1/labeled.parquet --ground-truth /root/sessions/M1/ground_truth.jsonl
@@ -80,15 +84,25 @@ SESJE="data/flows/M1.parquet data/flows/M2.parquet data/flows/M3.parquet data/fl
 ```bash
 /root/venvs/ft/bin/python stats/summarize.py --variant cic --traffic /root/sessions/M1 /root/sessions/M2 /root/sessions/M3 /root/sessions/M4 /root/sessions/M5 /root/sessions/M6
 /root/venvs/ft/bin/python stats/summarize.py --variant cic+genis --traffic /root/sessions/M1 /root/sessions/M2 /root/sessions/M3 /root/sessions/M4 /root/sessions/M5 /root/sessions/M6
+# tabele liczbowe pracy w LaTeX-u (praca/tabele/*.tex) z wyników, przepływów i logu nagrań
+/root/venvs/ft/bin/python stats/tables.py
 ```
 
 ### 7. Dashboard (tryb replay)
 
 ```bash
-/root/venvs/ft/bin/python app/dashboard.py --predictions results/raw/S1_cic_M1 --ground-truth /root/sessions/M1/ground_truth.jsonl --stats results/stats/cic
+/root/venvs/ft/bin/python app/dashboard.py --predictions results/raw/S1_cic_M1 --ground-truth /root/sessions/M1/ground_truth.jsonl
 ```
 
-Potem w przeglądarce w Windows: http://localhost:8050. W pasku bocznym wybiera się scenariusz (S1 bez adaptacji albo S2 po adaptacji na M0), wariant modeli i sesję testową; nad widokami jest napis, który bieg jest odtwarzany. Predykcje S1 zapisuje `run_experiments.py`, a S2 `run_s2.py` (`results/raw/<scenariusz>_<wariant>_<sesja>/`). Zatrzymanie: Ctrl+C.
+Potem w przeglądarce w Windows: http://localhost:8050. Zakładka „Porównanie” czyta `results/stats/<wariant>/`. W pasku bocznym wybiera się scenariusz (S1 bez adaptacji albo S2 po adaptacji na M0), wariant modeli i sesję testową; nad widokami jest napis, który bieg jest odtwarzany. Predykcje S1 zapisuje `run_experiments.py`, a S2 `run_s2.py` (`results/raw/<scenariusz>_<wariant>_<sesja>/`). Zatrzymanie: Ctrl+C.
+
+### 8. Tekst pracy (Windows, MiKTeX albo TeX Live)
+
+```bash
+cd praca && latexmk praca.tex
+```
+
+Wynik: `praca/build/praca.pdf` (pdflatex + biber, ustawienia w `praca/latexmkrc`).
 
 Dane (`data/`), nagrania, wytrenowane modele i predykcje (`results/raw/`) nie są w repozytorium; w `results/` są tylko małe pliki CSV z wynikami. Kod uruchamiać tylko w izolowanym laboratorium w WSL: działa jako root, zawiera testowe hasło i narzędzia ataków.
 

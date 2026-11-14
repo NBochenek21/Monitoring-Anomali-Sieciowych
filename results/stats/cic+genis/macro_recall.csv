@@ -1,0 +1,9 @@
+scenario,model,sessions,macro_recall,macro_recall_ci95,macro_recall_known,macro_recall_known_ci95
+S1,FT,6,0.982,0.021,0.991,0.009
+S1,IF,6,0.0,0.0,0.001,0.0
+S1,RF,6,0.955,0.006,1.0,0.0
+S1,baseline,6,0.232,0.006,0.29,0.007
+S2,FT,6,0.756,0.008,0.946,0.009
+S2,IF,6,0.398,0.0,0.498,0.0
+S2,RF,6,0.994,0.008,1.0,0.0
+S2,baseline,6,0.613,0.052,0.766,0.066

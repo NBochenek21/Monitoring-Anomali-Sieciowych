@@ -1,0 +1,19 @@
+% plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
+% wariant CIC + GeNIS: średnia ± 95% CI po sesjach M1-M6 (results/stats/cic+genis/summary.csv)
+\begin{tabular}{llccccc}
+\toprule
+Model & Scen. & Recall & FPR & FPR IoT & AUC-ROC & \begin{tabular}[b]{@{}c@{}}F1 \\ {}(pomocniczo)\end{tabular} \\
+\midrule
+baseline & S1 & 0,726$\,\pm\,$0,045 & 0,008$\,\pm\,$0,004 & 0,000$\,\pm\,$0,000 & 0,939$\,\pm\,$0,009 & 0,840$\,\pm\,$0,030 \\
+baseline & S2 & 0,990$\,\pm\,$0,001 & 0,015$\,\pm\,$0,004 & 0,157$\,\pm\,$0,047 & 0,988$\,\pm\,$0,003 & 0,994$\,\pm\,$0,001 \\
+\midrule
+IF & S1 & 0,002$\,\pm\,$0,001 & 0,022$\,\pm\,$0,002 & 0,000$\,\pm\,$0,000 & 0,834$\,\pm\,$0,028 & 0,003$\,\pm\,$0,001 \\
+IF & S2 & 0,714$\,\pm\,$0,056 & 0,013$\,\pm\,$0,003 & 0,000$\,\pm\,$0,000 & 0,924$\,\pm\,$0,017 & 0,831$\,\pm\,$0,039 \\
+\midrule
+RF & S1 & 1,000$\,\pm\,$0,000 & 0,455$\,\pm\,$0,012 & 1,000$\,\pm\,$0,000 & 0,985$\,\pm\,$0,003 & 0,967$\,\pm\,$0,007 \\
+RF & S2 & 1,000$\,\pm\,$0,000 & 0,014$\,\pm\,$0,004 & 0,017$\,\pm\,$0,019 & 1,000$\,\pm\,$0,000 & 0,999$\,\pm\,$0,001 \\
+\midrule
+FT & S1 & 1,000$\,\pm\,$0,001 & 0,585$\,\pm\,$0,012 & 1,000$\,\pm\,$0,000 & 0,947$\,\pm\,$0,009 & 0,958$\,\pm\,$0,009 \\
+FT & S2 & 0,998$\,\pm\,$0,001 & 0,007$\,\pm\,$0,003 & 0,033$\,\pm\,$0,000 & 0,999$\,\pm\,$0,001 & 0,999$\,\pm\,$0,001 \\
+\bottomrule
+\end{tabular}

@@ -12,6 +12,7 @@ data/
 # Artefakty modeli i wyniki pośrednie
 models/artifacts/
 results/raw/
+results_archiwum_*/
 
 # Python
 __pycache__/

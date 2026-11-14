@@ -18,12 +18,17 @@ Random Forest (Breiman, Machine Learning 2001):
 
 Próg decyzji: oba modele dają liczbę (wynik), a nie od razu decyzję „atak / normalny”.
 Próg ustalam na ruchu normalnym z walidacji (dane, na których model się nie uczył) tak, żeby
-fałszywych alarmów było ok. 1% (raportujemy też PR-AUC, które w ogóle nie zależy od progu).
+fałszywych alarmów było ok. 1%. evaluate liczy recall, FPR, AUC-ROC, F1, precision i PR-AUC
+(wszystkie trafiają do metrics.csv); które z nich i z jakim zastrzeżeniem idą do statystyki pracy,
+opisuje stats/summarize.py. Do tego macierz pomyłek: dla każdego modelu prawdziwa klasa × decyzja
+(alarm / brak alarmu), a dla RF prawdziwa klasa × przewidziana klasa (6 klas prawdziwych).
 """
+from collections import Counter
+
 import joblib
 import numpy as np
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
-from sklearn.metrics import average_precision_score
+from sklearn.metrics import average_precision_score, roc_auc_score
 
 RANDOM_SEED = 42
 TARGET_FALSE_POSITIVE_RATE = 0.01  # próg tak, żeby ok. 1% normalnego ruchu dawało alarm
@@ -52,12 +57,22 @@ def isolation_forest_scores(model, features):
 
 # ---------------------------------------------------------------- Random Forest
 
-# Uczy Random Forest na wszystkich przepływach, z etykietą wieloklasową.
+# Uczy Random Forest na wszystkich przepływach, z etykietą wieloklasową i zrównoważonymi klasami.
 # sample_weight (opcjonalnie): waga każdego przepływu, np. wyższa dla sesji adaptacyjnej M0 w S2.
+# Z wagami przepływów class_weight="balanced" liczyłby wagi klas z liczności, a nie z sum wag, więc
+# po pomnożeniu klasy ważyłyby nierówno (do 1,6× w S2). Dlatego wtedy równoważę klasy sam:
+# waga przepływu × suma wszystkich wag / (liczba klas × suma wag jego klasy); każda klasa waży tyle samo.
 def train_random_forest(features, attack_types, sample_weight=None):
+    class_weight = "balanced"
+    if sample_weight is not None:
+        weights = np.asarray(sample_weight, dtype=float)
+        classes, index = np.unique(attack_types, return_inverse=True)
+        class_sums = np.bincount(index, weights=weights)
+        sample_weight = weights * weights.sum() / (len(classes) * class_sums[index])
+        class_weight = None
     model = RandomForestClassifier(
         n_estimators=200,
-        class_weight="balanced",
+        class_weight=class_weight,
         random_state=RANDOM_SEED,
         n_jobs=-1,
     )
@@ -72,6 +87,19 @@ def random_forest_scores(model, features):
     return 1.0 - probabilities[:, normal_column]
 
 
+# Klasa przewidziana przez RF (do macierzy pomyłek): "normal", gdy wynik ataku 1 - P(normal) nie przekracza
+# progu, a w przeciwnym razie najbardziej prawdopodobna klasa ataku. Decyzja atak / normalny jest więc ta
+# sama co w metrykach binarnych. Klasy c2_beaconing RF nie zna (nie ma jej w treningu), więc jej nie przewidzi.
+def random_forest_classes(model, features, threshold):
+    probabilities = model.predict_proba(features)
+    classes = np.array(model.classes_)
+    normal_column = list(classes).index("normal")
+    attack_probabilities = probabilities.copy()
+    attack_probabilities[:, normal_column] = -1.0  # wybór tylko spośród klas ataków
+    most_likely_attack = classes[attack_probabilities.argmax(axis=1)]
+    return np.where(1.0 - probabilities[:, normal_column] > threshold, most_likely_attack, "normal")
+
+
 # ---------------------------------------------------------------- próg i metryki
 
 # Próg = wartość, której przekracza tylko ok. 1% wyników ruchu normalnego (z walidacji).
@@ -82,7 +110,9 @@ def choose_threshold(scores, labels):
 
 # Metryki dla etykiet binarnych (1 = atak) i wyników modelu.
 #
-# PR-AUC  - jakość rankingu przy niezbalansowanych klasach (nie zależy od progu),
+# AUC-ROC - pole pod krzywą ROC (TPR od FPR po wszystkich progach): nie zależy od progu ani od udziału
+#           ataków w teście; 0,5 = losowo, 1 = idealny ranking,
+# PR-AUC  - pole pod krzywą precision-recall (zależy od udziału ataków),
 # precision, recall, F1, FPR - dla decyzji „wynik > próg”.
 def evaluate(labels, scores, threshold):
     predicted_attack = scores > threshold
@@ -96,14 +126,25 @@ def evaluate(labels, scores, threshold):
     precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
     recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-    false_positive_rate = false_positives / (false_positives + true_negatives) if (false_positives + true_negatives) > 0 else 0.0
+    negatives = false_positives + true_negatives
+    false_positive_rate = false_positives / negatives if negatives > 0 else 0.0
     # PR-AUC liczone jako average precision (pole pod krzywą precision-recall po wszystkich progach);
     # ma sens tylko, gdy w danych są obie klasy
-    pr_auc = float(average_precision_score(labels, scores)) if is_attack.any() and (~is_attack).any() else float("nan")
+    both_classes = is_attack.any() and (~is_attack).any()
+    pr_auc = float(average_precision_score(labels, scores)) if both_classes else float("nan")
+    roc_auc = float(roc_auc_score(labels, scores)) if both_classes else float("nan")
 
-    return {"pr_auc": pr_auc, "precision": precision, "recall": recall, "f1": f1,
+    return {"pr_auc": pr_auc, "roc_auc": roc_auc, "precision": precision, "recall": recall, "f1": f1,
             "fpr": false_positive_rate, "tp": true_positives, "fp": false_positives,
             "fn": false_negatives, "tn": true_negatives}
+
+
+# Macierz pomyłek jako lista wierszy {true, predicted, count}: prawdziwa klasa (attack_type) × decyzja
+# modelu (np. "alarm" / "brak alarmu" albo klasa przewidziana przez RF).
+def confusion_rows(true_classes, predicted):
+    counts = Counter(zip(true_classes, predicted))
+    return [{"true": true, "predicted": decision, "count": count}
+            for (true, decision), count in sorted(counts.items())]
 
 
 # Jaki odsetek przepływów każdego ataku przekroczył próg (wykrywalność per atak).

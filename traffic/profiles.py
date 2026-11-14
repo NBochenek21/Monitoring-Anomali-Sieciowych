@@ -23,8 +23,7 @@ DAILY_RAW = [
     0.030, 0.020, 0.014, 0.010, 0.008, 0.006,  # 18-23 wieczór i noc
 ]
 
-#normalizuje te liczby do sredniej 1 
-# Zwróć mnożnik intensywności dla każdej godziny, ze średnią równą 1.
+# Zwraca mnożnik intensywności dla każdej godziny: DAILY_RAW znormalizowane do średniej 1.
 def daily_curve():
     average = sum(DAILY_RAW) / len(DAILY_RAW)
     return [value / average for value in DAILY_RAW]
@@ -53,11 +52,14 @@ BEHAVIOR = {
 
 # Profile grup: bazowa liczba sesji na godzinę (sph - sessions per hour) i wagi typów sesji.
 # Dla IoT zamiast sesji losowych jest heartbeat o stałym odstępie (sekundy).
-# sph podniesione ~1,5x dla większego wolumenu danych; obok tego działa stałe tło
-# (worker.background_loop). Wartości sph to decyzja własna (kalibracja).
+# Obok sesji działa stałe tło (worker.background_loop). Wartości sph to decyzja własna (kalibracja).
+# To stawki BAZOWE: worker mnoży je przez krzywą dobową (średnia 1 na dobę), więc w godzinach
+# nagrań 8-14 rzeczywista stawka jest 1,6-2,4 razy wyższa (np. o1 o 8:00 ok. 127 sesji/h przy sph 60).
 GROUPS = {
-    "office": {"sph": 60, "sessions": {"web_browse": 0.55, "dns_lookup": 0.20, "mail_send": 0.25}}, #wagi prawdopodobienstwa jakiejs sesji
-    "dev":    {"sph": 24, "sessions": {"web_browse": 0.30, "ssh_work": 0.30, "file_transfer": 0.30, "dns_lookup": 0.10}},
+    # sessions: wagi prawdopodobieństwa typu sesji
+    "office": {"sph": 60, "sessions": {"web_browse": 0.55, "dns_lookup": 0.20, "mail_send": 0.25}},
+    "dev":    {"sph": 24, "sessions": {"web_browse": 0.30, "ssh_work": 0.30, "file_transfer": 0.30,
+                                       "dns_lookup": 0.10}},
     "admin":  {"sph": 36, "sessions": {"ssh_admin": 0.80, "dns_lookup": 0.20}},
     "printer": {"sph": 6, "sessions": {"dns_lookup": 0.5, "web_browse": 0.5}},
     "iot":    {"heartbeat_s": 60.0, "sessions": {}},
@@ -77,8 +79,8 @@ ZIPF_EXPONENT = 0.8
 def web_file_names(count=WEB_FILE_COUNT):
     return [f"file{i:04d}.bin" for i in range(1, count + 1)] 
 
-#daje wage kadzego pliku - kilka plików bardzo popoularnych a wiekszosc pobierana rzadko - jak w prawdziwej sieci
-# Wagi Zipf: p(rank) ~ 1 / rank^ZIPF_EXPONENT (plik 1 najpopularniejszy).
+# Wagi Zipf: p(rank) ~ 1 / rank^ZIPF_EXPONENT (plik 1 najpopularniejszy) - kilka plików bardzo
+# popularnych, a większość pobierana rzadko.
 def zipf_weights(count=WEB_FILE_COUNT):
     return [1.0 / (rank ** ZIPF_EXPONENT) for rank in range(1, count + 1)]
 

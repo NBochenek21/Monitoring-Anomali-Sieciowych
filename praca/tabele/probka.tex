@@ -1,0 +1,18 @@
+% plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
+% próbka do treningu i walidacji: najwyżej 20000 przepływów na parę (źródło, klasa);
+% wariant CIC używa wierszy CIC-IDS2017, wariant CIC + GeNIS obu zbiorów
+\begin{tabular}{lllrrrrr}
+\toprule
+Zbiór & Scen. & Część & \begin{tabular}[b]{@{}c@{}}ruch \\ {}normalny\end{tabular} & \begin{tabular}[b]{@{}c@{}}A1 \\ {}skan portów\end{tabular} & \begin{tabular}[b]{@{}c@{}}A2 \\ {}brute-force \\ {}SSH\end{tabular} & \begin{tabular}[b]{@{}c@{}}A3 \\ {}wolny DoS\end{tabular} & \begin{tabular}[b]{@{}c@{}}A4 \\ {}HTTP flood\end{tabular} \\
+\midrule
+CIC & S0 & trening & 20\,000 & 20\,000 & 1773 & 4713 & 20\,000 \\
+CIC & S0 & walidacja & 20\,000 & 16\,923 & 313 & 832 & 20\,000 \\
+CIC & S1 & trening & 20\,000 & 20\,000 & 2533 & 6733 & 20\,000 \\
+CIC & S1 & walidacja & 20\,000 & 20\,000 & 447 & 1189 & 20\,000 \\
+\midrule
+GeNIS & S0 & trening & 13\,513 & 12\,474 & 2793 & 16\,940 & 20\,000 \\
+GeNIS & S0 & walidacja & 2389 & 2202 & 494 & 2990 & 4100 \\
+GeNIS & S1 & trening & 19\,311 & 17\,820 & 3992 & 20\,000 & 20\,000 \\
+GeNIS & S1 & walidacja & 3412 & 3147 & 705 & 4271 & 5856 \\
+\bottomrule
+\end{tabular}

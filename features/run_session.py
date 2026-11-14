@@ -12,7 +12,10 @@ To narzędzie służy też do właściwych sesji M0–M6. Następny krok to extr
     python3 features/run_session.py --duration 3600 --attacks all --start-hour 8 --seed 101 --out /root/sessions/M1
     python3 features/run_session.py --duration 900 --attacks A2_ssh_bruteforce A4_http_flood --out /root/test
 Sesja z atakami musi trwać co najmniej WARMUP_S + END_MARGIN_S + MIN_GAP_S (560 s).
+Kod wyjścia 2 oznacza przerwę albo cofnięcie czasu w nagraniu: sesję trzeba nagrać ponownie
+(record_all.sh wtedy jej nie przetwarza).
 """
+import glob
 import argparse
 import os
 import random
@@ -35,24 +38,26 @@ import generator  # noqa: E402
 import orchestrator  # noqa: E402
 
 
-# --- Harmonogram ataków w sesji (decyzja własna; opis w Notion, strona „Praca inżynierska: blueprint”, sekcja 7.6) ---
+# --- Harmonogram ataków w sesji (decyzja własna; opis w Notion, strona „Praca inżynierska: blueprint”, sekcja 6.5) ---
 # Ataki rozkładam na całą sesję (nie wszystkie na początku), każdy scenariusz 3-5 razy,
 # z kilkuminutowym odstępem. Konkretne wartości są moją decyzją; łatwo je stroić tutaj.
 WARMUP_S = 20          # czysty ruch normalny na starcie, zanim ruszą ataki
 END_MARGIN_S = 420     # ogon ruchu normalnego na końcu, bez nowych ataków; dłuższy niż najdłuższy atak
-                       # (Z1: 7 beaconów co ok. 45 s, do ok. 7 min), żeby atak kończył się przed końcem sesji
+                       # (Z1: 7 beaconów, 6 odstępów po 45 s ±25% i jitter ±20%, czyli najwyżej
+                       # 6 × 45 × 1,25 × 1,2 = 405 s), żeby atak kończył się przed końcem sesji
 MIN_GAP_S = 120        # docelowy minimalny odstęp między startami kolejnych ataków
 REPEATS_MIN, REPEATS_MAX = 3, 5   # ile razy każdy scenariusz na sesję (ile się zmieści)
 QUIET_AFTER_ATTACK_S = 60  # co najmniej tyle ciszy po ataku = długość okna cech hosta (window_features),
                            # żeby okno jednego ataku nie obejmowało poprzedniego (np. A3 i A4 z tego samego atk)
 MAX_CAPTURE_GAP_S = 120    # dłuższa przerwa bez pakietów = maszyna WSL stała (uśpienie, skok zegara);
                            # ruch tła idzie co 30-90 s z każdego hosta, więc normalnie to się nie zdarza
+ROTATION = ["o3", "d2", "o5"]  # rotacja roli zainfekowanej stacji wewnętrznej (pick_attacker)
 
 
 # Jeden przebieg po nagraniu: liczba pakietów, największa przerwa między pakietami [s]
 # i czy czas się cofnął (o więcej niż 1 s; drobne cofnięcia to zwykła kolejność pakietów).
 def capture_summary(pcap):
-    proc = subprocess.Popen(["tcpdump", "-r", pcap, "-nn", "-tt"], stdout=subprocess.PIPE,
+    proc = subprocess.Popen([topology.TCPDUMP, "-r", pcap, "-nn", "-tt"], stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, text=True)
     packets, max_gap, went_back, previous = 0, 0.0, False, None
     for line in proc.stdout:
@@ -105,12 +110,15 @@ def pick_attacker(spec, internal_index, override):
         return override
     if spec["attacker"] == "atk":
         return "atk"
-    return orchestrator.ROTATION[internal_index % len(orchestrator.ROTATION)]
+    return ROTATION[internal_index % len(ROTATION)]
 
 
-# Zwraca kopię spec z lekko zmienionymi parametrami (±15%, dla C2 interwał ±25%), żeby
-# kolejne wystąpienia tego samego ataku nie były identyczne. Tryby i zakresy (np. porty
-# skanu, tryb slowloris) zostawiam bez zmian.
+# Zwraca kopię spec z lekko zmienionymi parametrami, żeby kolejne wystąpienia tego samego ataku
+# nie były identyczne. Zmieniają się (±15%): A2 rate_limit_s; A3 connections i duration;
+# A4 duration i rps; Z1 interval (±25%). A1 i pozostałe parametry (wątki, tryby, zakresy portów,
+# rate i interval slowhttptest, count i jitter beaconu) są stałe. Narzędzia, które same coś losują (jitter beaconów,
+# ścieżki floodu), dostają ziarno z rng sesji, więc nagranie z tym samym --seed losuje to samo;
+# ziarno trafia też do params w ground truth.
 def vary_params(spec, rng):
     # wartość pomnożona przez losowy czynnik z przedziału [1 - frac, 1 + frac]
     def jitter(value, frac=0.15):
@@ -126,8 +134,10 @@ def vary_params(spec, rng):
     elif attack_type == "http_flood":
         params["duration"] = max(1, int(jitter(params["duration"])))
         params["rps"] = max(1, int(jitter(params["rps"])))
+        params["seed"] = rng.randrange(10**6)
     elif attack_type == "c2_beaconing":
         params["interval"] = round(jitter(params["interval"], 0.25), 1)
+        params["seed"] = rng.randrange(10**6)
     new_spec = dict(spec)
     new_spec["params"] = params
     return new_spec
@@ -142,7 +152,8 @@ def main():
     )
     parser.add_argument("--duration", type=int, default=300, help="czas sesji [s rzeczywiste]")
     parser.add_argument("--out", required=True)
-    parser.add_argument("--attacks", nargs="*", default=["all"], help="nazwy scenariuszy albo 'all'; 'none' = bez ataków")
+    parser.add_argument("--attacks", nargs="*", default=["all"],
+                        help="nazwy scenariuszy albo 'all'; 'none' = bez ataków")
     parser.add_argument("--start-hour", type=int, default=8)
     parser.add_argument("--attacker", default=None, help="nadpisz atakującego dla wszystkich scenariuszy")
     parser.add_argument("--seed", type=int, default=42)
@@ -157,6 +168,9 @@ def main():
     gt = os.path.join(out, "ground_truth.jsonl")
     if os.path.exists(gt):
         os.remove(gt)
+    # stare logi generatora z poprzedniego uruchomienia w tym katalogu (worker pisałby dalej do nich)
+    for old_log in glob.glob(os.path.join(out, "traffic_*.jsonl")):
+        os.remove(old_log)
 
     if args.attacks == ["none"]:
         specs = []
@@ -171,7 +185,7 @@ def main():
     topology.cleanup()
     topology.ensure_ovs()
     net = topology.build()
-    handles, cap, workers, planned = [], None, {}, 0
+    handles, cap, workers, planned, broken = [], None, {}, 0, False
     try:
         net.start()
         topology.disable_offload(net)
@@ -220,7 +234,7 @@ def main():
                     except Exception:
                         proc = None
                 # run_attack czeka, aż atak się skończy, i dopisuje rekord do ground_truth.jsonl
-                orchestrator.run_attack(net, occurrence, out, rng, attacker_override=attacker)
+                orchestrator.run_attack(net, occurrence, out, attacker)
                 quiet_until = time.time() + QUIET_AFTER_ATTACK_S
                 if proc:
                     try:
@@ -232,20 +246,30 @@ def main():
         if remaining > 0:
             time.sleep(remaining)
 
+        # SIGTERM do całej grupy procesów workera: kończy też curl, ssh i scp w trakcie,
+        # a worker zapisuje worker_stop. Worker, który nie skończy w 5 s, dostaje SIGKILL.
         for w in workers.values():
-            w.terminate()
+            signal_worker(w, signal.SIGTERM)
         for w in workers.values():
-            w.wait(timeout=5)  # workery muszą się zakończyć, zanim zatrzymamy nagrywanie i sieć
+            try:
+                w.wait(timeout=5)  # workery muszą się zakończyć, zanim zatrzymamy nagrywanie i sieć
+            except subprocess.TimeoutExpired:
+                signal_worker(w, signal.SIGKILL)
+                w.wait(timeout=5)
         time.sleep(1)
         cap.terminate()
         cap.wait(timeout=10)
 
         # krótkie podsumowanie
         pkts, max_gap, went_back = capture_summary(pcap)
-        n_gt = sum(1 for _ in open(gt)) if os.path.exists(gt) else 0
+        n_gt = 0
+        if os.path.exists(gt):
+            with open(gt) as f:
+                n_gt = sum(1 for _ in f)
         print(f"Sesja: {args.duration} s, pakiety w capture: {pkts}, ataki: {n_gt} z {planned} zaplanowanych")
         print(f"  największa przerwa między pakietami: {max_gap:.1f} s")
         if max_gap > MAX_CAPTURE_GAP_S or went_back:
+            broken = True
             print(f"  UWAGA: przerwa {max_gap:.0f} s albo cofnięcie czasu w nagraniu - maszyna WSL stała "
                   f"(uśpienie, skok zegara). Sesję trzeba nagrać ponownie.")
         print(f"  pcap: {pcap}")
@@ -268,6 +292,8 @@ def main():
         services.stop_services(handles)
         net.stop()
         topology.cleanup()
+    if broken:
+        sys.exit(2)
 
 
 if __name__ == "__main__":

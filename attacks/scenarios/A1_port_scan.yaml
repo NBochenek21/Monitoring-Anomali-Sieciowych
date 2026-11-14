@@ -9,5 +9,7 @@ tool: nmap
 params:
   scan_flags: "-sS"          # SYN scan jak w CIC
   ports: "1-1024"
-  timing: "-T3"              # wolniej = trudniejsze do wykrycia, mniej obciąża CPU
-  extra: "--max-rate 300"    # limit tempa, żeby nie dławić Mininetu
+  timing: "-T3"              # domyślny szablon nmapa („normal”), podany jawnie; tempo ogranicza --max-rate
+  # -n: bez odwrotnych zapytań DNS o cele (szły do resolvera WSL spoza sieci laboratorium
+  # i dawały przepływ UDP z etykietą normal w każdym wystąpieniu A1)
+  extra: "-n --max-rate 300" # limit tempa, żeby nie dławić Mininetu

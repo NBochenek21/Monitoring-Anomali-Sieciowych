@@ -4,8 +4,8 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
-apt-get install -y apache2 dnsmasq openssh-server openssh-client curl python3-pip
-pip3 install -q aiosmtpd==1.4.6
+apt-get install -y apache2 dnsmasq openssh-server openssh-client curl
+# aiosmtpd (serwer poczty) instaluje install_wsl_packages.sh z requirements-extract.txt
 
 # Usługi systemowe wyłączone: każdą uruchamiam ręcznie w przestrzeni nazw hosta Mininetu.
 systemctl disable --now apache2 dnsmasq ssh >/dev/null 2>&1 || true

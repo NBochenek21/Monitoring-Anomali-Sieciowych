@@ -1,4 +1,4 @@
-#!/usr/bin/env python3 
+#!/usr/bin/env python3
 #shebang pozwala uruchomić skrypt bezpośrednio w linuksie
 
 """Buduje i testuje topologię sieci w Mininecie.
@@ -16,7 +16,7 @@ import sys #sys.exit
 import time #czekanie na start tcpdump w teście nagrywania
 
 from mininet.net import Mininet #obiekt calej sieci
-from mininet.cli import CLI #kosnola
+from mininet.cli import CLI #konsola
 from mininet.link import Link, TCLink #łącza zwykłe i z emulacją opóznień (netem)
 from mininet.log import setLogLevel #ilość wypisywanych logów
 from mininet.node import Host, OVSBridge #bazowy host i switch Open vSwitch
@@ -104,7 +104,7 @@ class LinuxRouter(LabHost):
     # Mininet woła config() przy starcie sieci; po zwykłej konfiguracji włączamy routowanie
     def config(self, **params):
         result = super().config(**params)
-        self.cmd("sysctl -qw net.ipv4.ip_forward=1") # włączenie przekazywanua pakietów IPv4
+        self.cmd("sysctl -qw net.ipv4.ip_forward=1") # włączenie przekazywania pakietów IPv4
         return result
 
 #opóźnienia łączy w ms: dostępowe (host-switch) i WAN (r0-s5, "Internet")
@@ -126,7 +126,8 @@ def build():
     net = Mininet(controller=None, switch=OVSBridge, host=LabHost, link=Link, autoSetMacs=True)
     first_gateway = SEGMENTS["biuro"][3]
     #dostaje IP bramy segmentu biuro jako pierwszy adres
-    r0 = net.addHost("r0", cls=LinuxRouter, ip=f"{first_gateway}/24") #przypisujemy ip dla pierwszego int bo tak działa mininet - nie chcemy losowego
+    #adres dla pierwszego interfejsu, bo tak działa Mininet - nie chcemy losowego
+    r0 = net.addHost("r0", cls=LinuxRouter, ip=f"{first_gateway}/24")
     
 
 
@@ -157,7 +158,7 @@ def build():
         net.addLink(host, switches[segment], cls=TCLink, delay=f"{LAN_DELAY_MS}ms") #host zawsze ma opóznienie LAN
     return net
 
-#generator(yield) - przechodzi po wszytskich interfejsach wszystkich hostow i switchy pomijając loopback
+#generator(yield) - przechodzi po wszystkich interfejsach wszystkich hostow i switchy pomijając loopback
 #dzięki temu dwie funckje (offloading, test offloadingu) nie powtarzają tej samej pętli
 def lab_interfaces(net):
     for node in net.hosts + net.switches:
@@ -192,13 +193,20 @@ def run_cli(net):
     finally:
         setLogLevel("warning")
 
-#zwraca gotową liste argumentów tcpdump do nagrywania pakietów an r0 (wspólne dla sesji i testów)
+# tcpdump z Ubuntu (pakiet tcpdump, 4.99.1), podany ścieżką. Instalacja nProbe dołożyła pakiet pfring
+# z własnym tcpdump 4.99.4 w /usr/local/bin, który w PATH roota wygrywał z /usr/bin; sesje M0-M6
+# z 4-5.11.2026 nagrał najpewniej ten drugi (ta sama libpcap 1.10.1 i ten sam format pliku).
+# Ścieżka usuwa tę zależność od PATH: nagrywa zawsze ta sama wersja co po świeżej instalacji.
+TCPDUMP = "/usr/bin/tcpdump"
+
+
+#zwraca gotową listę argumentów tcpdump do nagrywania pakietów na r0 (wspólne dla sesji i testów)
 # -i any -Q in: każdy pakiet routowany między segmentami jest łapany raz, na wejściu do r0.
 # -y LINUX_SLL: nagłówek Linux cooked v1 zamiast domyślnego v2 (SLL2), bo NFStream czyta tylko v1.
 # Nagrywa tylko ruch przechodzący przez r0 (między segmentami); ruch wewnątrz jednego segmentu,
 # np. web <-> files w serwerowni, nie trafia do nagrania.
 def capture_cmd(pcap):
-    return ["tcpdump", "-i", "any", "-y", "LINUX_SLL", "-Q", "in", "-s", "0", "-U", "-w", pcap]
+    return [TCPDUMP, "-i", "any", "-y", "LINUX_SLL", "-Q", "in", "-s", "0", "-U", "-w", pcap]
 
 #średnie opóźnienie RTT między hostem a adresem docelowym, w ms - używane tylko w testach
 def avg_rtt(src, dst_ip, count=5):
@@ -214,13 +222,13 @@ def run_checks(net):
     #potem zatrzymuje nagrywanie, gdy strata pingall = 0 to przekazywanie pakietów dziala
     r0 = net.get("r0") #zwraca obiekt r0 z sieci
     pcap = "/tmp/topology_ipv6.pcap"
-    cap = r0.popen(["tcpdump", "-i", "any", "-nn", "-U", "-w", pcap, "ip6"],
+    cap = r0.popen([TCPDUMP, "-i", "any", "-nn", "-U", "-w", pcap, "ip6"],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) #nie zaśmiecam ekranu logami
     results["pingall_loss_pct"] = net.pingAll(timeout="1")
     cap.terminate()#zatrzymanie tcpdump
     cap.wait(timeout=10) #czekam az zamknie sie plik
-    out = subprocess.run(["tcpdump", "-r", pcap, "-nn"], capture_output=True, text=True).stdout
-    results["ipv6_packets_on_r0"] = len([line for line in out.splitlines() if line.strip()])#przepuszczenie niepustych lini
+    out = subprocess.run([TCPDUMP, "-r", pcap, "-nn"], capture_output=True, text=True).stdout
+    results["ipv6_packets_on_r0"] = len([line for line in out.splitlines() if line.strip()])  #niepuste linie
     checks["pingall"] = results["pingall_loss_pct"] == 0 
 
     #ipv6_off zlicza linie w tym IPv6 nagraniu - musi być zero pakietów; samo nagranie to słaby dowód
@@ -236,7 +244,7 @@ def run_checks(net):
     #offload_off - czyta ethtool -k i szuka : on  - lista musi być pusta
     checks["offload_off"] = not results["offload_on"]
 
-    #rtt_lan / rtt_wan - mierzy RTT z o1 do serwera(LAN) i o1 do xweb(WAN) i porównoje z oczekiwanym. 
+    #rtt_lan / rtt_wan - mierzy RTT z o1 do serwera(LAN) i o1 do xweb(WAN) i porównuje z oczekiwanym. 
     o1 = net.get("o1")
     results["rtt_lan_ms"] = avg_rtt(o1, HOSTS["web"][1])
     results["rtt_wan_ms"] = avg_rtt(o1, HOSTS["xweb"][1])
@@ -265,7 +273,7 @@ def run_checks(net):
     time.sleep(1)
     cap.terminate()
     cap.wait(timeout=10)
-    dump = subprocess.run(["tcpdump", "-r", pcap, "-nn", "icmp"], capture_output=True, text=True).stdout
+    dump = subprocess.run([TCPDUMP, "-r", pcap, "-nn", "icmp"], capture_output=True, text=True).stdout
     results["capture_icmp_packets"] = len([line for line in dump.splitlines() if line.strip()])
     checks["capture_once"] = results["capture_icmp_packets"] == 20
     return results, checks #zwracamy oba dicty
@@ -303,6 +311,6 @@ def main():
         cleanup()
     sys.exit(0 if ok else 1)
 
-#odpala main() tlyko jeśli uruchomione ten plik bezpośrednio
+#odpala main() tylko jeśli uruchomione ten plik bezpośrednio
 if __name__ == "__main__":
     main()

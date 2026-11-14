@@ -48,13 +48,6 @@ body {
     margin-bottom: 8px;
 }
 
-.brand-meta {
-    color: var(--muted);
-    font-size: 12px;
-    font-family: var(--mono);
-    line-height: 1.6;
-}
-
 /* nawigacja w pasku bocznym */
 .nav label {
     display: block;

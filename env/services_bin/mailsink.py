@@ -3,7 +3,7 @@
 
 Przyjmuje pocztę od hostów biurowych i dopisuje ją do skrzynki mbox, żeby generować
 realistyczny ruch SMTP (normalny wzorzec zachowania obok ataków). Nie przekazuje poczty
-dalej. Pakiety idą przez r) do segmentu serwerów
+dalej. Pakiety idą przez r0 do segmentu serwerów.
 
     python3 mailsink.py --bind 10.0.10.14 --port 25 --mbox /tmp/lab/mail/inbox.mbox
 """
@@ -15,7 +15,7 @@ from aiosmtpd.controller import Controller #biblioteka do tworzenia serwera SMTP
 
 #gdy w rozmowie SMTP dzieje się coś konkretnego to woła metode handlera o umówionej nazwie, 
 #ja definiuje tylko metode handle_DATA w momencie gdy klient prześle treść maila (po lini z kropka)
-#reszta rozmowy ma domyślne zachowanie i każdy nadawca oraz odbiorca jest przyjomwany
+#reszta rozmowy ma domyślne zachowanie i każdy nadawca oraz odbiorca jest przyjmowany
 #metoda jest asynchroniczna - zapisuje mail w formacie mbox
 class MboxHandler:
     # zapamiętuje ścieżkę skrzynki, do której handle_DATA dopisuje maile
@@ -33,7 +33,7 @@ class MboxHandler:
             f.write("\n\n")
         return "250 Message accepted for delivery" #kod SMTP oznaczający sukces
 
-#parsuje argumenty (adres, port 25, sciezka szkrzynki; katalog na plik mbox tworzy services.py),
+#parsuje argumenty (adres, port 25, ścieżka skrzynki; katalog na plik mbox tworzy services.py),
 #a potem uruchamia serwer SMTP w pętli asynchronicznej. Zatrzymuje go services.py (SIGTERM)
 def main():
     parser = argparse.ArgumentParser(

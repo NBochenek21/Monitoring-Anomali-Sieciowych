@@ -10,6 +10,13 @@ Ruch testowy (klient 10.0.1.10:40000 -> serwer 10.0.10.10:80):
 Oczekiwane przepływy TCP: A (8) i B (4), bez resztek połączenia; deduplikacja usuwa 1 pakiet.
 Ten sam plik jako SLL v1 daje to samo; jako SLL2 NFStream nie czyta nic (stąd -y LINUX_SLL).
 
+Warianty porównawcze (opis w 7.1), na tym samym pliku Ethernet:
+  - zamykanie na pierwszym FIN: A kończy się na FIN klienta (6 pakietów). FIN serwera otwiera
+    resztkowy przepływ, który ten sam FIN od razu zamyka (1 pakiet), a końcowy ACK klienta otwiera
+    nowy przepływ i dokleja się do połączenia B (1 + 4 pakiety): TCP [6, 1, 5];
+  - same timeouty (bez wtyczki): B przychodzi 2 s po A, czyli przed idle 60 s, więc oba połączenia
+    sklejają się w jeden przepływ: TCP [12].
+
     python3 features/test_extract_flows.py
 """
 import json
@@ -23,6 +30,9 @@ import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EXTRACT = os.path.join(HERE, "extract_flows.py")
+sys.path.insert(0, HERE)
+import extract_flows  # noqa: E402  (warianty zamykania TCP liczone w tym procesie)
+from nfstream import NFPlugin  # noqa: E402
 CLIENT, SERVER, DNS = "10.0.1.10", "10.0.10.10", "10.0.10.11"
 FIN, SYN, RST, PSH, ACK = 0x01, 0x02, 0x04, 0x08, 0x10
 LINKTYPE = {"ether": 1, "sll": 113, "sll2": 276}
@@ -126,6 +136,23 @@ def run(pcap, outdir):
     return pd.read_parquet(os.path.join(outdir, f"{name}.parquet")), duplicates
 
 
+# Wariant porównawczy: przepływ TCP kończy się na pierwszym FIN (albo RST), bez czekania na drugą stronę.
+class FirstFinTermination(NFPlugin):
+    def on_init(self, packet, flow):
+        self.on_update(packet, flow)
+
+    def on_update(self, packet, flow):
+        if packet.protocol == 6 and (packet.fin or packet.rst):
+            flow.expiration_id = -1
+
+
+# Ekstrakcja w tym procesie z podaną regułą zamykania TCP (deduplikacja i kolejność jak w extract_flows).
+def run_variant(pcap, tmpdir, tcp_plugin):
+    os.makedirs(tmpdir, exist_ok=True)
+    ready, _ = extract_flows.prepare(pcap, tmpdir)
+    return extract_flows.extract(ready, tcp_plugin=tcp_plugin)
+
+
 # Liczby pakietów w kolejnych przepływach TCP i ich adresy źródłowe (do porównania z oczekiwanymi).
 def tcp_packets(df):
     t = df[df["protocol"] == 6].sort_values("bidirectional_first_seen_ms")
@@ -134,6 +161,7 @@ def tcp_packets(df):
 
 # Tworzy pliki testowe w trzech formatach, uruchamia na nich extract_flows.py i porównuje wynik
 # z oczekiwanym: Ethernet i SLL v1 mają dać przepływy 8 i 4 pakiety + DNS, SLL2 ma dać 0.
+# Na końcu dwa warianty porównawcze reguły zamykania TCP na pliku Ethernet.
 def main():
     tmp = tempfile.mkdtemp(prefix="test_flows_")
     pcaps = {}
@@ -159,6 +187,18 @@ def main():
     ok &= sll2_ok
     print(f"{'OK  ' if sll2_ok else 'BŁĄD'} SLL2: {len(df)} przepływów (NFStream nie czyta SLL2, "
           "dlatego capture z -y LINUX_SLL)")
+
+    # warianty porównawcze reguły zamykania TCP (dlaczego wtyczka TcpTermination)
+    variants = [
+        ("pierwszy FIN", FirstFinTermination(), [6, 1, 5],
+         "resztkowy przepływ z FIN serwera, końcowy ACK doklejony do następnego połączenia"),
+        ("same timeouty", None, [12], "oba połączenia sklejone w jeden przepływ"),
+    ]
+    for index, (name, plugin, want_tcp, meaning) in enumerate(variants):
+        got_tcp, _ = tcp_packets(run_variant(pcaps["ether"], os.path.join(tmp, f"variant{index}"), plugin))
+        passed = got_tcp == want_tcp
+        ok &= passed
+        print(f"{'OK  ' if passed else 'BŁĄD'} wariant {name}: TCP {got_tcp} (oczekiwane {want_tcp}: {meaning})")
     print("WYNIK:", "OK" if ok else "BŁĄD")
     raise SystemExit(0 if ok else 1)
 

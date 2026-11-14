@@ -1,0 +1,19 @@
+% plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
+% wariant CIC + GeNIS: recall każdego ataku, średnia po sesjach M1-M6
+\begin{tabular}{llccccc}
+\toprule
+Model & Scen. & \begin{tabular}[b]{@{}c@{}}A1 \\ {}skan portów\end{tabular} & \begin{tabular}[b]{@{}c@{}}A2 \\ {}brute-force \\ {}SSH\end{tabular} & \begin{tabular}[b]{@{}c@{}}A3 \\ {}wolny DoS\end{tabular} & \begin{tabular}[b]{@{}c@{}}A4 \\ {}HTTP flood\end{tabular} & \begin{tabular}[b]{@{}c@{}}Z1 \\ {}beaconing C2\end{tabular} \\
+\midrule
+baseline & S1 & 0,99 & 0,00 & 0,00 & 0,17 & 0,00 \\
+baseline & S2 & 1,00 & 0,21 & 0,87 & 0,99 & 0,00 \\
+\midrule
+IF & S1 & 0,00 & 0,00 & 0,00 & 0,00 & 0,00 \\
+IF & S2 & 1,00 & 0,00 & 0,99 & 0,00 & 0,00 \\
+\midrule
+RF & S1 & 1,00 & 1,00 & 1,00 & 1,00 & 0,78 \\
+RF & S2 & 1,00 & 1,00 & 1,00 & 1,00 & 0,97 \\
+\midrule
+FT & S1 & 1,00 & 0,96 & 1,00 & 1,00 & 0,95 \\
+FT & S2 & 1,00 & 0,78 & 1,00 & 1,00 & 0,00 \\
+\bottomrule
+\end{tabular}

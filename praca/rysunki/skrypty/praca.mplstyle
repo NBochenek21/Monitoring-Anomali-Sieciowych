@@ -1,0 +1,38 @@
+# Wspólny styl wykresów pracy: Times New Roman 9 pt (tekst pracy: Times z pakietu times),
+# szerokość kolumny 160 mm, czarno-białe linie, PDF z osadzonymi czcionkami TrueType.
+font.family: serif
+font.serif: Times New Roman
+mathtext.fontset: custom
+mathtext.rm: Times New Roman
+mathtext.it: Times New Roman:italic
+font.size: 9
+axes.titlesize: 9
+axes.labelsize: 9
+xtick.labelsize: 8.5
+ytick.labelsize: 8.5
+legend.fontsize: 8.5
+legend.frameon: True
+legend.edgecolor: black
+legend.fancybox: False
+legend.framealpha: 1
+axes.linewidth: 0.6
+axes.edgecolor: black
+axes.grid: True
+grid.color: b3b3b3
+grid.linestyle: :
+grid.linewidth: 0.5
+xtick.direction: in
+ytick.direction: in
+xtick.top: True
+ytick.right: True
+xtick.major.width: 0.6
+ytick.major.width: 0.6
+lines.linewidth: 1.0
+hatch.linewidth: 0.5
+figure.figsize: 6.3, 2.6
+figure.dpi: 150
+savefig.bbox: tight
+savefig.pad_inches: 0.02
+pdf.fonttype: 42
+axes.formatter.use_mathtext: False
+axes.unicode_minus: True

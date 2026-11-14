@@ -6,13 +6,16 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 # Mininet i sieć (net-tools: Mininet sam używa ifconfig), nagrywanie i obróbka PCAP
-# (wireshark-common: editcap, reordercap), dig, curl, pip i venv.
+# (wireshark-common: editcap, reordercap), dig, curl, pip i venv. PyYAML pochodzi z apt (python3-yaml
+# 5.4.1): z pip wersja 5.4.1 nie buduje się na Pythonie 3.10, a pip tylko uznaje wersję z apt za
+# spełniającą wpis w requirements-extract.txt. Wersje apt nie są przypięte (Ubuntu usuwa stare wersje
+# z repozytorium); wersje z wyników pracy są w env/setup/apt-versions.txt, porównuje je check_versions.sh.
 apt-get update
 apt-get install -y \
   mininet openvswitch-switch \
   tcpdump ethtool iproute2 iputils-ping wireshark-common \
   net-tools dnsutils curl \
-  python3-pip python3-venv
+  python3-pip python3-venv python3-yaml
 
 # IPv6 wyłączone na stałe w WSL: porty switchy Mininetu powstają w głównej przestrzeni nazw
 # i od razu nie mają IPv6. Hosty Mininetu wyłączają IPv6 same (env/topology.py, LabHost),
@@ -25,13 +28,15 @@ net.ipv6.conf.default.disable_ipv6 = 1
 EOF
 sysctl -p /etc/sysctl.d/90-lab-ipv6.conf
 
-# Systemowy python3: ekstrakcja przepływów i etykiety (features/).
-pip3 install nfstream==6.6.0 pandas==2.3.3 pyarrow==25.0.1 numpy==2.2.6
+# Wersje pakietów Pythona są tylko w plikach requirements-*.txt w katalogu głównym repozytorium.
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 
-# Osobne środowisko dla modeli (models/) i dashboardu (app/): FlowTransformer wymaga TensorFlow i Keras 3.
+# Systemowy python3: ekstrakcja przepływów, etykiety, ruch i ataki.
+pip3 install -r "$REPO/requirements-extract.txt"
+
+# Osobne środowisko dla modeli (models/), statystyki i dashboardu (app/): FlowTransformer wymaga TensorFlow i Keras 3.
 python3 -m venv /root/venvs/ft
-/root/venvs/ft/bin/pip install tensorflow==2.21.0 keras==3.12.4 scikit-learn==1.6.1 scipy==1.15.3 \
-  pandas==2.2.3 pyarrow==25.0.1 numpy==2.2.6 joblib==1.6.0 dash==4.4.1 plotly==7.1.0
+/root/venvs/ft/bin/pip install -r "$REPO/requirements-models.txt"
 
 echo "Gotowe: $(mn --version) / $(tcpdump --version 2>&1 | head -1)"
 python3 -c "import nfstream; print('nfstream', nfstream.__version__)"

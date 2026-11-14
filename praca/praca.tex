@@ -1,0 +1,52 @@
+\documentclass[12pt]{aghdpl}
+
+%---------------------------------------------------------------------------
+% Dane do strony tytułowej (wzór WIEiT, ,,Strona tytułowa I stopień'').
+% Tytuły muszą się zgadzać co do słowa z tematem zatwierdzonym w USOS.
+%---------------------------------------------------------------------------
+
+\author{Norbert Bochenek}
+\shortauthor{N. Bochenek}
+
+\titlePL{Wykorzystanie algorytmów uczenia maszynowego oraz modeli typu transformer w~detekcji anomalii w~ruchu sieciowym}
+% tytuł angielski wielkimi literami według zasad pisowni tytułów w języku angielskim (wytyczne)
+\titleEN{Using Machine Learning Algorithms and Transformer Models to Detect Anomalies in Network Traffic}
+
+% skrócony tytuł do stopki stron
+\shorttitlePL{Uczenie maszynowe i transformery w detekcji anomalii sieciowych}
+\shorttitleEN{Machine Learning and Transformers in Network Anomaly Detection}
+
+% Wzór WIEiT: ,,Projekt dyplomowy'' na koniec studiów I stopnia, ,,Praca dyplomowa'' na koniec II stopnia.
+\thesistype{Projekt dyplomowy}
+
+\supervisor{dr inż. Paweł Kuraś}
+\degreeprogramme{Teleinformatyka}
+\faculty{Wydział Informatyki, Elektroniki i Telekomunikacji}
+\institute{INSTYTUT TELEKOMUNIKACJI I CYBERBEZPIECZEŃSTWA}
+\date{2026}
+
+% Podziękowania są opcjonalne (wzór wydziału ich nie wymaga); odkomentuj, żeby dodać stronę z nimi.
+% \acknowledgements{Dziękuję \dots}
+
+
+\begin{document}
+
+	\titlepages
+	\RedefinePlainStyle
+
+	% streszczenie i abstract: sekcje nienumerowane (wytyczne)
+	\include{rozdzialy/streszczenie}
+
+	\setcounter{tocdepth}{2}
+	\tableofcontents
+	\clearpage
+
+	\include{rozdzialy/wstep}
+
+	\printbibliography
+
+	% spisy rysunków i tabel na końcu pracy (plan w Notion: ,,spis rysunków, spis tabel'')
+	\listoffigures
+	\listoftables
+
+\end{document}

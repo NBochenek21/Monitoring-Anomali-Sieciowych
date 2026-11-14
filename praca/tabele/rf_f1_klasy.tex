@@ -1,0 +1,18 @@
+% plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
+% F1 każdej klasy dla RF (macierz 6 x 6 zsumowana po M1-M6, rf_class_f1.csv);
+% klasy c2_beaconing nie ma w treningu, więc jej F1 = 0 z definicji
+\begin{tabular}{lrcccc}
+\toprule
+Klasa & Przepływy & \begin{tabular}[b]{@{}c@{}}CIC \\ {}S1\end{tabular} & \begin{tabular}[b]{@{}c@{}}CIC \\ {}S2\end{tabular} & \begin{tabular}[b]{@{}c@{}}CIC + GeNIS \\ {}S1\end{tabular} & \begin{tabular}[b]{@{}c@{}}CIC + GeNIS \\ {}S2\end{tabular} \\
+\midrule
+ruch normalny & 25\,597 & 0,684 & 0,993 & 0,705 & 0,993 \\
+A1 skan portów & 122\,938 & 0,995 & 1,000 & 0,996 & 1,000 \\
+A2 brute-force SSH & 414 & 0,291 & 0,953 & 0,209 & 0,965 \\
+A3 wolny DoS & 5097 & 0,149 & 0,993 & 0,187 & 0,992 \\
+A4 HTTP flood & 49\,254 & 0,000 & 0,997 & 0,233 & 0,996 \\
+Z1 beaconing C2 & 168 & 0,000 & 0,000 & 0,000 & 0,000 \\
+\midrule
+macro-F1 &  & 0,353 & 0,823 & 0,388 & 0,824 \\
+macro-F1 bez Z1 &  & 0,424 & 0,987 & 0,466 & 0,989 \\
+\bottomrule
+\end{tabular}

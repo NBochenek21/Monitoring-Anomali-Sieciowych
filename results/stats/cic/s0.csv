@@ -1,0 +1,5 @@
+test,model,recall,fpr,roc_auc,f1
+cic_test,baseline,0.913,0.033,0.96,0.901
+cic_test,IF,0.027,0.015,0.949,0.051
+cic_test,RF,1.0,0.035,1.0,0.943
+cic_test,FT,0.994,0.01,0.999,0.98

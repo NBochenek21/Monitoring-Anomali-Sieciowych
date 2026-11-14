@@ -14,7 +14,7 @@ cechy były porównywalne między domenami. Kroki dla każdego pliku:
 Wynik: <out>/<nazwa>.parquet (posortowany po starcie przepływu) i <out>/<nazwa>.meta.json
 z wersjami narzędzi, parametrami i statystyką deduplikacji.
 
-    python3 features/extract_flows.py --pcap data/pcap/M1/capture.pcap --out data/flows_raw/M1
+    python3 features/extract_flows.py --pcap /root/sessions/M1/capture.pcap --out /root/sessions/M1/flows
     python3 features/extract_flows.py --pcap <katalog z pcap/pcapng> --out <katalog>
 """
 import argparse
@@ -137,10 +137,15 @@ def prepare(src, tmpdir):
 # Właściwa ekstrakcja: NFStream czyta przygotowany pcap i zwraca tabelę przepływów (jeden wiersz = jeden
 # przepływ, ok. 70 kolumn statystyk). n_dissections=0 wyłącza DPI, statistical_analysis=True dokłada
 # statystyki rozmiarów pakietów, odstępów i flag; udps to nasze dwie wtyczki z góry pliku.
-def extract(pcap):
+# tcp_plugin podmienia regułę zamykania TCP tylko w teście (test_extract_flows.py porównuje warianty);
+# None = bez wtyczki, czyli same timeouty NFStreama.
+def extract(pcap, tcp_plugin="default"):
+    if tcp_plugin == "default":
+        tcp_plugin = TcpTermination()
+    plugins = ([tcp_plugin] if tcp_plugin is not None else []) + [PayloadBytes()]
     streamer = NFStreamer(source=pcap, decode_tunnels=False, bpf_filter=BPF_FILTER,
                           idle_timeout=IDLE_TIMEOUT, active_timeout=ACTIVE_TIMEOUT,
-                          n_dissections=0, statistical_analysis=True, udps=[TcpTermination(), PayloadBytes()])
+                          n_dissections=0, statistical_analysis=True, udps=plugins)
     df = streamer.to_pandas()
     if df is None:  # NFStream zwraca None, gdy nie powstał żaden przepływ
         return pd.DataFrame()
@@ -172,12 +177,17 @@ def linktype(pcap):
 
 
 # Lista plików do przetworzenia: wszystkie pcap/pcapng/cap z katalogu (także z podkatalogów)
-# albo jeden podany plik.
+# albo jeden podany plik. Wynik nazywa się samą nazwą pliku, więc dwa pliki o tej samej nazwie
+# w różnych podkatalogach nadpisałyby się po cichu - wtedy program kończy się błędem.
 def find_pcaps(path):
     if os.path.isdir(path):
         all_files = glob.glob(os.path.join(path, "**", "*"), recursive=True)
-        files = [file for file in all_files if file.lower().endswith(PCAP_EXT)]
-        return sorted(files)
+        files = sorted(file for file in all_files if file.lower().endswith(PCAP_EXT))
+        names = [os.path.splitext(os.path.basename(file))[0] for file in files]
+        clashes = sorted({name for name in names if names.count(name) > 1})
+        if clashes:
+            sys.exit(f"Pliki o tej samej nazwie w różnych podkatalogach (wynik by się nadpisał): {clashes}")
+        return files
     return [path]
 
 
@@ -199,8 +209,8 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     versions = {"nfstream": nfstream.__version__, "editcap": tool_version("editcap"),
                 "reordercap": tool_version("reordercap")}
-    params = {"tcp_expiry": "both_fin", "idle": IDLE_TIMEOUT, "active": ACTIVE_TIMEOUT, "bpf": BPF_FILTER,
-              "dpi": 0, "dedup_window": DEDUP_WINDOW}
+    params = {"tcp_expiry": "rst_or_fin_both_sides_then_ack", "idle": IDLE_TIMEOUT, "active": ACTIVE_TIMEOUT,
+              "bpf": BPF_FILTER, "dpi": 0, "dedup_window": DEDUP_WINDOW}
 
     for f in files:
         name = os.path.splitext(os.path.basename(f))[0]

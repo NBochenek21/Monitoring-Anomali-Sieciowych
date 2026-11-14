@@ -1,0 +1,18 @@
+% plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
+% liczba przepływów każdej klasy po etykietowaniu (data/flows/cic.parquet i genis.parquet)
+\begin{tabular}{lrr}
+\toprule
+Klasa & \begin{tabular}[b]{@{}c@{}}CIC-IDS2017 \\ {}(4 dni)\end{tabular} & GeNIS \\
+\midrule
+ruch normalny & 1\,472\,682 & 22\,723 \\
+A1 skan portów & 161\,166 & 20\,967 \\
+A2 brute-force SSH & 2980 & 4697 \\
+A3 wolny DoS & 7922 & 28\,472 \\
+A4 HTTP flood & 262\,146 & 39\,039 \\
+\midrule
+attempted (usuwane) & 142\,081 & 22\,604 \\
+poza zakresem (usuwane) & 12\,862 & 16\,693 \\
+\midrule
+razem & 2\,061\,839 & 155\,195 \\
+\bottomrule
+\end{tabular}

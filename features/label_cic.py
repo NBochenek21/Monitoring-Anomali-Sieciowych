@@ -20,6 +20,7 @@ Wyjście: jeden plik .parquet z kolumnami label, attack_type, source ("cic"), re
 """
 import argparse
 import csv
+import os
 from datetime import datetime, timedelta, timezone
 
 from label_flows import OUT_OF_SCOPE, PROTOCOL_NUMBER, label_recordings, save
@@ -78,6 +79,14 @@ def main():
     parser.add_argument("--ground-truth", required=True, help="CSV z features/cic_ground_truth/")
     parser.add_argument("--out", required=True, help="wyjściowy plik .parquet")
     args = parser.parse_args()
+
+    # Czwartek (6.07.2017: ataki web i infiltracja) jest poza zakresem pracy i nie ma wierszy w ground
+    # truth, więc wszystkie jego ataki dostałyby etykietę normal. Nagranie czwartku przerywa program.
+    thursday = sorted(name for name in os.listdir(args.flows)
+                      if name.endswith(".parquet") and "thursday" in name.lower())
+    if thursday:
+        raise SystemExit(f"Nagranie czwartku poza zakresem (brak okien ataków w ground truth): {thursday}. "
+                         f"Usuń je z {args.flows} przed etykietowaniem.")
 
     attacks = read_ground_truth(args.ground_truth)
     print(f"Ataków w ground truth: {len(attacks)}")

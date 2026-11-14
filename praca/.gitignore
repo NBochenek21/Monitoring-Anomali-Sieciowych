@@ -1,0 +1,16 @@
+# pliki pośrednie LaTeX-a (wynik kompilacji w build/)
+build/
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+# gotowy PDF budowany lokalnie (latexmk), nie wersjonowany
+praca.pdf

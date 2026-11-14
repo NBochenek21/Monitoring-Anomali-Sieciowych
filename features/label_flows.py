@@ -131,7 +131,8 @@ def label_recordings(folder, attacks, source):
         labeled["source"] = source
         labeled["recording"] = recording
         labeled_recordings.append(labeled)
-        print(f"  {recording:28s} przepływy: {len(labeled):7d}  klasy: {labeled['attack_type'].value_counts().to_dict()}")
+        classes = labeled["attack_type"].value_counts().to_dict()
+        print(f"  {recording:28s} przepływy: {len(labeled):7d}  klasy: {classes}")
     return pd.concat(labeled_recordings, ignore_index=True)
 
 

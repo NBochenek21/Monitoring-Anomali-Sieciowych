@@ -32,7 +32,11 @@ import topology  # noqa: E402
 
 ATTACKS_DIR = os.path.dirname(os.path.abspath(__file__))
 TOOLS_DIR = os.path.join(ATTACKS_DIR, "tools")
-ROTATION = ["o3", "d2", "o5"]  # rotacja roli zainfekowanej stacji (run_session.pick_attacker)
+# Limit czasu jednego narzędzia [s]: najdłuższy atak (Z1) trwa najwyżej ok. 405 s (w M0-M6 199-345 s);
+# zawieszone narzędzie
+# (np. patator na przeciążonym sshd) nie może wydłużyć okna ataku w ground truth bez końca.
+# Przekroczenie limitu daje kod wyjścia 124 (timeout) w ground truth i ostrzeżenie na ekranie.
+TOOL_TIMEOUT_S = 900
 
 
 # Pobierz adres IP hosta z centralnej konfiguracji topologii.
@@ -100,7 +104,7 @@ def run_http_flood(host, spec, target_ips, log):
     params = spec["params"]
     cmd = (f"python3 '{TOOLS_DIR}/http_flood.py' --target {target_ips[0]} "
            f"--duration {params['duration']} --threads {params['threads']} "
-           f"--rps {params['rps']} --log '{log}'")
+           f"--rps {params['rps']} --seed {params.get('seed', 0)} --log '{log}'")
     return run_tool(host, cmd)
 
 
@@ -110,14 +114,16 @@ def run_beacon(host, spec, target_ips, log):
     cmd = (f"python3 '{TOOLS_DIR}/beacon_client.py' --target {target_ips[0]} "
            f"--count {params['count']} --interval {params['interval']} --jitter {params['jitter']} "
            f"--exfil-every {params.get('exfil_every', 0)} --exfil-bytes {params.get('exfil_bytes', 4096)} "
-           f"--log '{log}'")
+           f"--seed {params.get('seed', 0)} --log '{log}'")
     return run_tool(host, cmd)
 
 
-# Uruchamia polecenie w przestrzeni nazw hosta i zwraca kod wyjścia narzędzia (host.cmd zwraca
-# tylko tekst, więc kod dopisuję na końcu wyjścia); None, gdy nie da się go odczytać.
+# Uruchamia polecenie w przestrzeni nazw hosta (z limitem TOOL_TIMEOUT_S) i zwraca kod wyjścia narzędzia
+# (host.cmd zwraca tylko tekst, więc kod dopisuję na końcu wyjścia); None, gdy nie da się go odczytać.
+# Każde polecenie to jedno narzędzie z ewentualnym przekierowaniem wyjścia, więc timeout obejmuje całość.
 def run_tool(host, cmd):
-    output = host.cmd(f"{cmd}; echo __exit_code=$?")
+    # -k 10: gdy narzędzie zignoruje SIGTERM, po 10 s dostaje SIGKILL
+    output = host.cmd(f"timeout -k 10 {TOOL_TIMEOUT_S} {cmd}; echo __exit_code=$?")
     match = re.search(r"__exit_code=(\d+)", output)
     return int(match.group(1)) if match else None
 
@@ -147,7 +153,7 @@ def validate_spec(spec, path):
         raise ValueError(f"{path}: nieznane narzędzie {spec['tool']!r} (znane: {sorted(TOOL_PARAMS)})")
     if spec["type"] not in ATTACK_TYPES:
         raise ValueError(f"{path}: nieznany typ ataku {spec['type']!r} (znane: {sorted(ATTACK_TYPES)})")
-    for host in list(spec["targets"]) + ([] if spec["attacker"] == "rotate" else [spec["attacker"]]):
+    for host in list(spec["targets"]) + [spec["attacker"]]:
         resolve_ip(host)
     required, optional = TOOL_PARAMS[spec["tool"]]
     given = set(spec["params"])
@@ -157,12 +163,10 @@ def validate_spec(spec, path):
         raise ValueError(f"{path}: nieznane parametry {sorted(given - required - optional)}")
 
 
-# Uruchamia jeden atak i dopisuje jego rekord do ground_truth.jsonl (okno [start, end] + parametry).
-# Wołany przez features/run_session.py wg harmonogramu sesji.
-def run_attack(net, spec, out, rng, attacker_override=None):
-    attacker_name = attacker_override or spec["attacker"]
-    if attacker_name == "rotate":
-        attacker_name = rng.choice(ROTATION)
+# Uruchamia jeden atak z hosta attacker_name i dopisuje jego rekord do ground_truth.jsonl (okno
+# [start, end] + parametry). Wołany przez features/run_session.py wg harmonogramu sesji; atakującego
+# wybiera run_session.pick_attacker (rotacja hostów wewnętrznych).
+def run_attack(net, spec, out, attacker_name):
     host = net.get(attacker_name)
     attacker_ip = resolve_ip(attacker_name)
     target_ips = [resolve_ip(t) for t in spec["targets"]]

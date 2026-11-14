@@ -16,23 +16,30 @@ My trenujemy na zbiorze publicznym, a testujemy i dostrajamy na danych z Mininet
   3. wagi modelu z S1 zapisuję do pliku, żeby w S2 dostroić je na M0.
 
 Pochodzenie kodu w tym pliku (oznaczenia przy każdej części):
-  [AUTORZY]        - wywołanie kodu autorów z folderu models/FlowTransformer (bez zmian, opis w ZRODLO.md),
+  [AUTORZY]        - wywołanie kodu autorów z folderu models/FlowTransformer (z jedną zmianą zgodności
+                     z Keras 3 w encoder_block.py, opis w ZRODLO.md),
   [WG AUTORÓW]     - napisane przeze mnie, ale wiernie odtwarza sposób autorów (wzór, wartości),
   [NASZE]          - napisane przeze mnie, inaczej niż u autorów; przy każdym jest powód.
 
-Okno: 8 kolejnych przepływów tego samego hosta źródłowego (posortowanych po czasie startu).
+Okno: 8 kolejnych zakończonych przepływów tego samego hosta źródłowego (posortowanych po czasie
+końca, czyli chwili eksportu przepływu - bez przepływów, które w chwili decyzji jeszcze trwają).
 Etykieta okna = etykieta jego ostatniego przepływu. Pierwsze przepływy hosta, które nie mają
 jeszcze 7 poprzedników, dostają okno uzupełnione zerami na początku, więc każdy przepływ ma
-swoją predykcję.
+swoją predykcję. Historię okna biorę z pełnej tabeli (także attempted i sprzed podziału w czasie),
+tak jak cechy kontekstu hosta dla IF i RF.
 """
 import os
 import sys
 
 import numpy as np
 
-# [AUTORZY] Kod FlowTransformera leży obok tego pliku, w folderze FlowTransformer (oryginał, bez zmian).
+# [AUTORZY] Kod FlowTransformera leży obok tego pliku, w folderze FlowTransformer (oryginał z jedną
+# zmianą zgodności z Keras 3, opisaną w ZRODLO.md).
 FLOWTRANSFORMER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "FlowTransformer")
 sys.path.insert(0, FLOWTRANSFORMER_DIR)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "features"))
+
+from window_features import window_rows  # noqa: E402
 
 import keras  # noqa: E402
 from framework.enumerations import CategoricalFormat  # noqa: E402
@@ -55,57 +62,31 @@ MLP_SIZE = 128               # warstwa gęsta przed wyjściem (main.py: mlp_laye
 DROPOUT = 0.1                # (main.py: mlp_dropout=0.1)
 
 # [NASZE] rozmiar wektora przepływu po RecordLevelEmbed. Autorzy zalecają wymiar wewnętrzny
-# 1-2 razy większy od wejścia; dobieram go przy strojeniu hiperparametrów, 64 to punkt startowy.
+# 1-2 razy większy od wejścia; 64 to wartość przyjęta bez strojenia hiperparametrów (ograniczenie pracy).
 EMBED_DIMENSION = 64
 
 # ---------------------------------------------------------------- okna przepływów
 
-# [NASZE] Buduje okna: dla każdego przepływu ostatnie 8 przepływów TEGO SAMEGO hosta źródłowego.
+# [NASZE] Buduje okna: dla każdego przepływu z rows ostatnie 8 przepływów TEGO SAMEGO hosta źródłowego.
 # (Autorzy brali 8 kolejnych wierszy pliku bez względu na host; okno per host to założenie z planu
 # pracy - model widzi historię jednego hosta, np. kolejne próby logowania tego samego atakującego.
 # Etykieta okna = etykieta ostatniego przepływu, jak u autorów.)
 #
-# flows         - tabela przepływów (potrzebne: src_ip, bidirectional_first_seen_ms, label; recording, jeśli jest),
-# flow_features - wynik transform_flows dla tych samych wierszy, w tej samej kolejności.
-# Zwraca (okna, etykiety, numery wierszy), okna mają kształt (liczba przepływów, 8, liczba cech).
-def build_windows(flows, flow_features):
-    number_of_flows, number_of_features = flow_features.shape
-    windows = np.zeros((number_of_flows, WINDOW_SIZE, number_of_features), dtype="float32")
-    labels = np.zeros(number_of_flows, dtype="float32")
-    row_numbers = np.zeros(number_of_flows, dtype="int64")
-
-    # Kolejność: host źródłowy, a w nim czas startu przepływu.
-    # positions[k] = numer wiersza (0, 1, 2, ...) przepływu, który w tej kolejności jest k-ty.
-    # W zbiorach publicznych ten sam adres hosta występuje w kilku nagraniach (różne dni), więc tam
-    # „host” = para (nagranie, adres): okno nie łączy przepływów z różnych nagrań.
-    numbered = flows.reset_index(drop=True)
-    host_keys = numbered["src_ip"].astype(str)
-    if "recording" in numbered.columns:
-        host_keys = numbered["recording"].astype(str) + "/" + host_keys
-    numbered = numbered.assign(host_key=host_keys)
-    positions = numbered.sort_values(["host_key", "bidirectional_first_seen_ms"], kind="stable").index.to_numpy()
-    hosts = numbered["host_key"].to_numpy()[positions]
-    flow_labels = numbered["label"].to_numpy()[positions]
-
-    window_number = 0
-    host_start = 0
-    while host_start < number_of_flows:
-        # Wszystkie przepływy jednego hosta leżą obok siebie (posortowane).
-        host_end = host_start
-        while host_end < number_of_flows and hosts[host_end] == hosts[host_start]:
-            host_end += 1
-
-        for current in range(host_start, host_end):
-            first = max(host_start, current - WINDOW_SIZE + 1)
-            history = flow_features[positions[first:current + 1]]
-            # Gdy historii jest mniej niż 8 przepływów, początek okna zostaje wypełniony zerami.
-            windows[window_number, WINDOW_SIZE - len(history):] = history
-            labels[window_number] = flow_labels[current]
-            row_numbers[window_number] = positions[current]
-            window_number += 1
-        host_start = host_end
-
-    return windows, labels, row_numbers
+# flows     - PEŁNA tabela przepływów z indeksem 0..n-1 (src_ip, bidirectional_first_seen_ms,
+#             bidirectional_last_seen_ms, label; recording, jeśli jest); z niej pochodzi historia okna,
+# rows      - numery wierszy, dla których powstają okna (np. próbka treningowa albo sesja testowa),
+# transform - funkcja tabela -> cechy (transform_flows z przygotowaniem FT); liczy cechy tylko
+#             przepływów, które trafiają do jakiegoś okna.
+# Zwraca (okna, etykiety) w kolejności rows; okna mają kształt (len(rows), 8, liczba cech).
+def build_windows(flows, rows, transform):
+    rows = np.asarray(rows)
+    history = window_rows(flows, rows, WINDOW_SIZE)  # (len(rows), 8), -1 = brak przepływu
+    needed = np.unique(history[history >= 0])
+    features = transform(flows.iloc[needed])
+    windows = features[np.searchsorted(needed, np.clip(history, 0, None))]
+    windows[history < 0] = 0.0  # gdy historii jest mniej niż 8 przepływów, początek okna to zera
+    labels = flows["label"].to_numpy()[rows].astype("float32")
+    return windows, labels
 
 
 # [NASZE] dopasowanie danych do modelu autorów: ich model ma osobne wejście dla każdej cechy,

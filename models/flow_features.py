@@ -26,14 +26,15 @@ CATEGORICAL_FEATURES = ["protocol", "dst_port"]
 # (Autorzy też usuwali adresy IP.)
 #   expiration_id - sposób zakończenia przepływu przez nasze narzędzie (FIN/RST, idle, active), czyli
 #                   artefakt ekstrakcji, a nie ruchu; mógłby być skrótem dla modelu (Engelen i in. 2021),
-#   *_payload_bytes - tylko do etykiety „attempted” (features/label_flows.py).
+#   *_payload_bytes - tylko do etykiety „attempted” (features/label_flows.py),
+#   row             - numer wiersza w pełnej tabeli (do okien FT, models/run_experiments.py).
 NOT_FEATURES = [
     "id", "src_ip", "dst_ip", "src_port",
     "bidirectional_first_seen_ms", "bidirectional_last_seen_ms",
     "src2dst_first_seen_ms", "src2dst_last_seen_ms",
     "dst2src_first_seen_ms", "dst2src_last_seen_ms",
     "expiration_id", "src2dst_payload_bytes", "dst2src_payload_bytes",
-    "label", "attack_type", "source", "recording",
+    "label", "attack_type", "source", "recording", "row",
 ]
 
 
@@ -59,6 +60,7 @@ def fit_preprocessing(training_flows):
 
     for name in numeric_feature_names(training_flows):
         values = training_flows[name].astype("float64").to_numpy()
+        values = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)  # tak samo jak w transform_flows
         minimum = float(np.min(values))
         value_range = float(np.max(values) - minimum)
         preprocessing["numeric"][name] = {"min": minimum, "range": value_range}

@@ -22,8 +22,8 @@ Uruchomienie samodzielne (buduje topologię, startuje usługi, testuje, zatrzymu
 import argparse
 import json
 import os
-import random #losowe rozmiary plików, subprocess do pkill
-import subprocess
+import random #losowe rozmiary plików
+import subprocess #pkill i DEVNULL dla usług
 import sys
 import time
 
@@ -37,11 +37,13 @@ import profiles  # stąd biorą się nazwy plików na serwerze i ich liczba. - g
 
 #Stałe
 LAB = "/tmp/lab" #katalog roboczy - każda usługa dostaje podkatalog na konfiguracje logi i plik PID
-BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "services_bin") #ścieżka do katalogu gdzie leżą dwa serwery w pythonie
+#ścieżka do katalogu, w którym leżą dwa serwery w Pythonie
+BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "services_bin")
 SSH_USER = "labuser"
 SSH_PASS = "Lab1234!"    #konto testowe(cel brute-force'a)
 INT_DOMAIN = "firma.lab"
-EXT_DOMAIN = "lab-ext.example" #nazwy domen: wewnętrzna i zewnętrzna(internet) - .example nigdy nie wskaże domeny prawdziwej
+#nazwy domen: wewnętrzna i zewnętrzna (internet) - .example nigdy nie wskaże prawdziwej domeny
+EXT_DOMAIN = "lab-ext.example"
 
 #moduły Apache doładowywane w konfiguracji (Ubuntu 22.04; log_config i unixd są już wbudowane,
 #sprawdzone przez apache2 -l 29.10.2026, więc nie trzeba ich LoadModule)
@@ -49,7 +51,8 @@ APACHE_MODULES = """LoadModule mpm_prefork_module /usr/lib/apache2/modules/mod_m
 LoadModule authz_core_module /usr/lib/apache2/modules/mod_authz_core.so
 LoadModule mime_module /usr/lib/apache2/modules/mod_mime.so
 LoadModule dir_module /usr/lib/apache2/modules/mod_dir.so"""
-#doładowane moduły Apache: mpm_prefork - jeden proces apache na jedno połączenie, authz_core obsługa require all granted,
+#doładowane moduły Apache: mpm_prefork - jeden proces apache na jedno połączenie,
+#  authz_core obsługa require all granted,
 #  mime - typ zawartości w odp np. text/html, dir - zapytanie o / zwraca index.html
 
 
@@ -78,7 +81,7 @@ SERVICE_PATTERNS = [
 #zabija nasze usługi, które zostały po przerwanym uruchomieniu albo nie zatrzymały się same
 def kill_leftover_services():
     for pattern in SERVICE_PATTERNS:
-        subprocess.run(["pkill", "-f", pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) #wyrzuca output do kosza
+        subprocess.run(["pkill", "-f", pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 #jeśli konto labuser jeszcze nie istnieje to tworzy je, a potem zawsze ustawia haslo
@@ -87,9 +90,8 @@ def ensure_ssh_user():
         os.system(f"useradd -m -s /bin/bash {SSH_USER}") #tworzy konto z katalogiem domowym i powłoką bash
     os.system(f"echo '{SSH_USER}:{SSH_PASS}' | chpasswd") # ustawia hasło dla konta 
 
-#generuje pare kluczy SSH ed25519 i dopisuje klucz publiczny do authorized_keys labusera,
+#generuje parę kluczy SSH ed25519 i dopisuje klucz publiczny do authorized_keys labusera,
 #żeby generator ruchu mógł robić scp/sftp bez podawania hasła
-# Klucz dla labusera: pozwala generatorowi robić SFTP/scp bez podawania hasła.
 def ensure_client_key():
     key = host_dir("_client") + "/id_ed25519" # ścieżka do klucza prywatnego
     if not os.path.exists(key):
@@ -108,7 +110,7 @@ WEB_FILE_MIN_BYTES = 256
 WEB_FILE_MAX_BYTES = 8 * 1024 * 1024
 
 
-#losuje rozmair jednego pliku: 10% to ogon pareto (duże pliki), a reszta to małe pliki (mice)
+#losuje rozmiar jednego pliku: 10% to ogon pareto (duże pliki), a reszta to małe pliki (mice)
 def heavy_tailed_size(rng):
     if rng.random() < 0.10:
         # ogon: duże pliki (elephant flows), skala ~100 KB, alpha ~1,2 -> od 100 KB do kilku MB
@@ -118,7 +120,7 @@ def heavy_tailed_size(rng):
     return int(max(WEB_FILE_MIN_BYTES, min(size, WEB_FILE_MAX_BYTES)))
 
 
-#dla każej nazwy towrzy plik i wywołuje f.trucate(rozmair) - powstaje plik rzadki: system zapisuje tylko
+#dla każdej nazwy tworzy plik i wywołuje f.truncate(rozmiar) - powstaje plik rzadki: system zapisuje tylko
 #jego rozmiar, nie zapisuje bajtów na dysk, a przy czytaniu zwraca zera. Apache i scp wysyłają wtedy
 #pełny rozmiar, więc przepływy w sieci są prawdziwej wielkości a dysk pozostaje pusty.
 def make_files(directory, names, seed):
@@ -175,7 +177,9 @@ MaxRequestWorkers 20
         tail = host.cmd(f"tail -5 {d}/error.log 2>&1")
         print(f"[web] Apache nie odpowiada (HTTP {code or 'brak'}). start: {out.strip()}\n"
               f"[web] error.log:\n{tail}", file=sys.stderr)
-    handles.append({"type": "pidfile", "host": host, "pid": f"{d}/apache2.pid", "stop": f"apache2 -d {d} -f {d}/apache2.conf -k stop"}) #łagodne zatrzymanie
+    # stop: łagodne zatrzymanie przez apache2 -k stop
+    handles.append({"type": "pidfile", "host": host, "pid": f"{d}/apache2.pid",
+                    "stop": f"apache2 -d {d} -f {d}/apache2.conf -k stop"})
 
 #adres hosta z topology.py
 def ip(name):
@@ -207,7 +211,8 @@ pid-file={d}/dnsmasq.pid
 def start_dns_internal(host, handles):
     d = host_dir(host.name)
     servers = ["web", "dns", "ssh", "files", "mail"]
-    write(f"{d}/hosts.firma", "".join(f"{ip(name)} {name}.{INT_DOMAIN}\n" for name in servers)) # szuka w hosts.firma i odpowiada na zapytania o *.firma.lab
+    # dnsmasq szuka w hosts.firma i odpowiada na zapytania o *.firma.lab
+    write(f"{d}/hosts.firma", "".join(f"{ip(name)} {name}.{INT_DOMAIN}\n" for name in servers))
     start_dnsmasq(host, handles, [f"addn-hosts={d}/hosts.firma", f"server=/{EXT_DOMAIN}/{ip('xdns')}"]) 
 
 #host xdns jest autorytatywny DNS dla lab-ext.example i ustawia, że wszytko pod tą domeną
@@ -255,7 +260,8 @@ LogLevel VERBOSE
 def start_mail(host, handles):
     d = host_dir("mail")
     p = host.popen(["python3", f"{BIN}/mailsink.py", "--bind", host.IP(), "--port", "25",
-                    "--mbox", f"{d}/inbox.mbox"])
+                    "--mbox", f"{d}/inbox.mbox"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # bez nieczytanego potoku (jak xweb)
     handles.append({"type": "popen", "host": host, "proc": p})
 
 # "strona w internecie" - wbudowany python3 -m http.server dający index.html i mniejszy zbiór
@@ -264,7 +270,13 @@ def start_xweb(host, handles):
     www = host_dir("xweb", "www")
     write(os.path.join(www, "index.html"), "<html><body>External site</body></html>\n")
     make_files(www, profiles.web_file_names(profiles.XWEB_FILE_COUNT), seed=5678) #inne ziarno niz web - inne rozmiary
-    p = host.popen(["python3", "-m", "http.server", "80", "--bind", host.IP(), "--directory", www])
+    # http.server zapisuje każde żądanie na stderr. Popen w Mininecie daje domyślnie potok, którego nikt
+    # nie czyta: po ok. 64 KiB logu (ok. 1000 żądań) serwer zawieszał się (M0, M2-M4 nagrane 4-5.11).
+    # Log idzie więc do pliku, który przy okazji pozwala sprawdzić, ile żądań dostało odpowiedź.
+    log = open(os.path.join(host_dir("xweb"), "access.log"), "w")
+    p = host.popen(["python3", "-m", "http.server", "80", "--bind", host.IP(), "--directory", www],
+                   stdout=subprocess.DEVNULL, stderr=log)
+    log.close()  # proces potomny ma własną kopię deskryptora
     handles.append({"type": "popen", "host": host, "proc": p})
 
 #uruchamia services_bin/beacon_endpoint.py, serwer do którego beaconing C2 wysyła GET i POST (upload)
@@ -272,11 +284,12 @@ def start_xweb(host, handles):
 def start_c2(host, handles):
     d = host_dir("c2")
     p = host.popen(["python3", f"{BIN}/beacon_endpoint.py", "--bind", host.IP(), "--port", "80",
-                    "--log", f"{d}/requests.log", "--upload-dir", f"{d}/uploads"])
+                    "--log", f"{d}/requests.log", "--upload-dir", f"{d}/uploads"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # bez nieczytanego potoku (jak xweb)
     handles.append({"type": "popen", "host": host, "proc": p})
 
-#to jest dyrygent usług: towrzy konto i klucz a potem po kolei uruchamia każdą usługę
-#na odpowiednim hoscie  i zwraca listę handles - czyli rejestr wszytskiego co trzeba będzie zatrzymać
+#to jest dyrygent usług: tworzy konto i klucz a potem po kolei uruchamia każdą usługę
+#na odpowiednim hoscie  i zwraca listę handles - czyli rejestr wszystkiego, co trzeba będzie zatrzymać
 def start_services(net):
     kill_leftover_services() #resztki po przerwanym uruchomieniu (np. stary Apache z tym samym plikiem PID)
     ensure_ssh_user()
@@ -294,7 +307,7 @@ def start_services(net):
     return handles
 
 
-#zamyca wszytko w odwrtonej kolejności i odpornie na błedy - dwa sposoby zatrzmyania
+#zamyka wszystko w odwrotnej kolejności i odpornie na błędy - dwa sposoby zatrzymania
 #zależnie od handla - usługi z plikiem PID kill i serwery w Pythonie popen
 def stop_services(handles):
     for h in reversed(handles):
@@ -315,18 +328,26 @@ def stop_services(handles):
 
 def banner(host, ip, port, nbytes=80):
     return host.cmd(f"timeout 3 bash -c 'exec 3<>/dev/tcp/{ip}/{port}; head -c {nbytes} <&3'")
-#otwiera surowe połączneie TCP i czyta pierwsze bajty odp - służy do sprawdzenia czy usluga wgl odpowiada i czy wysyła banner (np. SSH, SMTP)
+#otwiera surowe połączenie TCP i czyta pierwsze bajty odpowiedzi - sprawdza, czy usługa w ogóle
+#odpowiada i czy wysyła banner (np. SSH, SMTP)
 
 
-#pełny test end-to-end każdej usługi z perspektywy klienta o1
+#pełny test end-to-end każdej usługi z perspektywy klienta o1. Pliki, które sprawdzają testy (pobrany
+#plik, skrzynka poczty, log C2), są najpierw usuwane: /tmp/lab przetrwa między uruchomieniami, więc stare
+#pliki dawałyby OK także przy niedziałającej usłudze.
 def run_checks(net, client_key):
     o1 = net.get("o1")
     results, checks = {}, {}
+    for stale in ("/tmp/lab/_client/got.bin", "/tmp/lab/mail/inbox.mbox", "/tmp/lab/c2/requests.log"):
+        if os.path.exists(stale):
+            os.remove(stale)
 
     # web
     results["web_http"] = o1.cmd(f"curl -s -o /dev/null -w '%{{http_code}}' http://{ip('web')}/").strip()
-    results["web_download"] = o1.cmd(f"curl -s -o /dev/null -w '%{{size_download}}' http://{ip('web')}/file0001.bin").strip()
-    checks["web"] = results["web_http"] == "200" and results["web_download"].isdigit() and int(results["web_download"]) > 0
+    results["web_download"] = o1.cmd(f"curl -s -o /dev/null -w '%{{size_download}}' "
+                                     f"http://{ip('web')}/file0001.bin").strip()
+    downloaded = results["web_download"]
+    checks["web"] = results["web_http"] == "200" and downloaded.isdigit() and int(downloaded) > 0
 
     # dns wewnętrzny: nazwa -> adres
     results["dns_internal"] = o1.cmd(f"dig +short +time=2 web.{INT_DOMAIN} @{ip('dns')}").strip()
@@ -345,7 +366,7 @@ def run_checks(net, client_key):
     checks["files_banner"] = results["files_banner"].startswith("SSH-2.0")
     scp = o1.cmd(f"scp -q -i {client_key} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
                  f"-o ConnectTimeout=5 {SSH_USER}@{ip('files')}:/tmp/lab/web/www/file0001.bin /tmp/lab/_client/got.bin "
-                 f"2>/dev/null; stat -c %s /tmp/lab/_client/got.bin 2>/dev/null")
+                 f"2>/dev/null && stat -c %s /tmp/lab/_client/got.bin 2>/dev/null")
     results["files_scp_bytes"] = scp.strip()
     checks["files_scp"] = results["files_scp_bytes"].isdigit() and int(results["files_scp_bytes"]) > 0
 
@@ -376,7 +397,7 @@ def run_checks(net, client_key):
     return results, checks
 
 #podobnie jak w  topology  - inaczej tylko - po starcie sieci uruchamia usługi testuje je i w finnalu
-# najpierw zamyka usługi potem sieć i końcyz kodem 0 tylko wtedy gdy wszystkie testy przeszły
+# najpierw zamyka usługi potem sieć i kończy z kodem 0 tylko wtedy gdy wszystkie testy przeszły
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cli", action="store_true")

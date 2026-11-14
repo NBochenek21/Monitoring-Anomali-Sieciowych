@@ -1,0 +1,49 @@
+% Przegląd tabel liczbowych (pliki z tabele/, generowane przez stats/tables.py) w skali, w jakiej trafią
+% do pracy (szerokość kolumny 160 mm), z proponowanym podpisem i miejscem w pracy. Szerokość każdej tabeli
+% jest w podpisie; tabela szersza od kolumny dostaje dopisek „ZA SZEROKA”.
+% Kompilacja: latexmk -pdf -outdir=build przeglad_tabel.tex
+\documentclass[12pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[polish]{babel}
+\usepackage{times}
+\usepackage{booktabs}
+\usepackage[lmargin=30mm, rmargin=20mm, tmargin=25mm, bmargin=25mm]{geometry}
+\usepackage[font=small, labelfont=bf, labelsep=period]{caption}
+\captionsetup[table]{name=Tab., position=top}
+\newsavebox{\tabbox}
+\newlength{\tabwidth}
+\newcommand{\tab}[4][\normalsize]{%
+  \sbox{\tabbox}{#1\input{tabele/#2}}\settowidth{\tabwidth}{\usebox{\tabbox}}%
+  \begin{table}[htb]
+    \centering
+    \caption{#3}
+    \usebox{\tabbox}\par\smallskip
+    \footnotesize\textit{Plik: \texttt{\detokenize{#2}.tex}; miejsce w pracy: #4;
+      szerokość \the\numexpr\tabwidth*100/\textwidth\relax\% kolumny}%
+    \ifdim\tabwidth>\textwidth\ \textbf{ZA SZEROKA}\fi
+  \end{table}}
+
+\begin{document}
+\section*{Tabele liczbowe: przegląd}
+Tabele generuje \texttt{stats/tables.py}; w pracy: \verb|\input{tabele/<plik>}| w środowisku \texttt{table}.
+
+\tab{zbiory_klasy}{Liczności klas zbiorów źródłowych po etykietowaniu}{4.4}
+\tab{sesje}{Sesje nagrane w Mininecie}{6.5}
+\tab[\small]{sklad_klas}{Skład klas w sesjach (liczba przepływów)}{6.5}
+\tab{wystapienia_atakow}{Wystąpienia ataków w sesjach}{6.5}
+\tab{realizm}{Realizm ruchu normalnego}{6.6}
+\tab[\small]{probka}{Liczności próbki do treningu i walidacji}{8.2}
+\tab{s0}{Wyniki S0 na końcówce zbioru źródłowego}{10.1}
+\tab[\small]{metryki_cic}{Wyniki S1 i S2, wariant CIC (średnia $\pm$ 95\% CI po sesjach M1--M6)}{10.1}
+\tab[\small]{metryki_cic_genis}{Wyniki S1 i S2, wariant CIC + GeNIS}{10.1}
+\tab[\small]{s2_wobec_s1}{S2 wobec S1 w tej samej sesji}{10.1}
+\tab{punkt_pracy}{Punkt pracy na krzywej ROC}{10.1}
+\tab[\small]{recall_ataki_cic}{Recall każdego ataku, wariant CIC}{10.2}
+\tab[\small]{recall_ataki_cic_genis}{Recall każdego ataku, wariant CIC + GeNIS}{10.2}
+\tab[\small]{sredni_recall}{Średni recall po atakach}{10.2}
+\tab{rf_f1_klasy}{F1 każdej klasy dla Random Forest}{10.2}
+\tab[\small]{koszt}{Koszt: czas treningu i przepustowość}{10.2}
+\tab[\small]{cechy_kontekstu}{Mediany cech kontekstu hosta w każdej klasie (M1--M6)}{10.3}
+\tab[\small]{wyniki_wobec_progu}{Wyniki RF i FT względem progu (mediany)}{10.3}
+\end{document}

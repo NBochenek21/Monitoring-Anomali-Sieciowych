@@ -1,0 +1,22 @@
+% plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
+% S0: test na ostatnich 30% (w czasie) zbioru źródłowego, osobno dla każdego źródła
+\begin{tabular}{lllcccc}
+\toprule
+Wariant & Test & Model & Recall & FPR & AUC-ROC & F1 \\
+\midrule
+CIC & CIC-IDS2017 & baseline & 0,913 & 0,033 & 0,960 & 0,901 \\
+CIC & CIC-IDS2017 & IF & 0,027 & 0,015 & 0,949 & 0,051 \\
+CIC & CIC-IDS2017 & RF & 1,000 & 0,035 & 1,000 & 0,943 \\
+CIC & CIC-IDS2017 & FT & 0,994 & 0,010 & 0,999 & 0,980 \\
+\midrule
+CIC + GeNIS & CIC-IDS2017 & baseline & 0,913 & 0,033 & 0,961 & 0,901 \\
+CIC + GeNIS & CIC-IDS2017 & IF & 0,114 & 0,007 & 0,958 & 0,200 \\
+CIC + GeNIS & CIC-IDS2017 & RF & 1,000 & 0,032 & 1,000 & 0,948 \\
+CIC + GeNIS & CIC-IDS2017 & FT & 0,998 & 0,015 & 0,999 & 0,975 \\
+\midrule
+CIC + GeNIS & GeNIS & baseline & 0,648 & 0,005 & 0,736 & 0,786 \\
+CIC + GeNIS & GeNIS & IF & 0,320 & 0,003 & 0,962 & 0,484 \\
+CIC + GeNIS & GeNIS & RF & 1,000 & 0,002 & 1,000 & 1,000 \\
+CIC + GeNIS & GeNIS & FT & 0,999 & 0,003 & 1,000 & 0,999 \\
+\bottomrule
+\end{tabular}

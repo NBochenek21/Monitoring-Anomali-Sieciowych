@@ -1,0 +1,17 @@
+% plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
+% punkt pracy (próg z walidacji) na krzywej ROC, przepływy M1-M6 razem (roc_points.csv)
+\begin{tabular}{llcccc}
+\toprule
+Wariant & Model & \begin{tabular}[b]{@{}c@{}}S1 \\ {}FPR / TPR\end{tabular} & \begin{tabular}[b]{@{}c@{}}S1 \\ {}AUC\end{tabular} & \begin{tabular}[b]{@{}c@{}}S2 \\ {}FPR / TPR\end{tabular} & \begin{tabular}[b]{@{}c@{}}S2 \\ {}AUC\end{tabular} \\
+\midrule
+CIC & baseline & 0,008 / 0,673 & 0,982 & 0,015 / 0,990 & 0,987 \\
+CIC & IF & 0,021 / 0,441 & 0,832 & 0,014 / 0,719 & 0,924 \\
+CIC & RF & 0,479 / 1,000 & 0,996 & 0,012 / 1,000 & 1,000 \\
+CIC & FT & 0,254 / 0,730 & 0,911 & 0,008 / 0,999 & 1,000 \\
+\midrule
+CIC + GeNIS & baseline & 0,008 / 0,730 & 0,940 & 0,015 / 0,990 & 0,987 \\
+CIC + GeNIS & IF & 0,023 / 0,002 & 0,837 & 0,014 / 0,719 & 0,926 \\
+CIC + GeNIS & RF & 0,455 / 1,000 & 0,985 & 0,014 / 1,000 & 1,000 \\
+CIC + GeNIS & FT & 0,585 / 1,000 & 0,947 & 0,008 / 0,999 & 0,999 \\
+\bottomrule
+\end{tabular}

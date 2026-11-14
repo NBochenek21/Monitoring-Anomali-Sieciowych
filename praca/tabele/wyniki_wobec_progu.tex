@@ -1,0 +1,20 @@
+% plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
+% mediany wyników modelu (score_quantiles.csv, przepływy M1-M6 razem); w nawiasie odsetek nad progiem:
+% FPR IoT i recall Z1 jako średnia po sesjach (summary.csv, recall_per_attack.csv)
+\begin{tabular}{lllcccc}
+\toprule
+Wariant & Scen. & Model & Próg & \begin{tabular}[b]{@{}c@{}}Ruch \\ {}normalny\end{tabular} & \begin{tabular}[b]{@{}c@{}}Heartbeat \\ {}IoT\end{tabular} & \begin{tabular}[b]{@{}c@{}}Z1 \\ {}beaconing\end{tabular} \\
+\midrule
+CIC & S1 & RF & 0,030 & 0,020 & 0,330 (1,00) & 0,305 (0,78) \\
+CIC & S2 & RF & 0,005 & 0,000 & 0,000 (0,02) & 0,030 (0,80) \\
+\midrule
+CIC & S1 & FT & 0,0012 & 0,0007 & 0,0010 (0,00) & 0,0006 (0,01) \\
+CIC & S2 & FT & 0,0034 & 0,0000 & 0,0002 (0,05) & 0,0000 (0,00) \\
+\midrule
+CIC + GeNIS & S1 & RF & 0,040 & 0,035 & 0,290 (1,00) & 0,290 (0,78) \\
+CIC + GeNIS & S2 & RF & 0,005 & 0,000 & 0,000 (0,02) & 0,030 (0,97) \\
+\midrule
+CIC + GeNIS & S1 & FT & 0,0023 & 0,0058 & 0,9832 (1,00) & 0,0121 (0,95) \\
+CIC + GeNIS & S2 & FT & 0,0207 & 0,0000 & 0,0119 (0,03) & 0,0001 (0,00) \\
+\bottomrule
+\end{tabular}
