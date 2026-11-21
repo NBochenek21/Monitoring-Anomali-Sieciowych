@@ -1,18 +1,18 @@
 % plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
 % mediany cech kontekstu hosta, przepływy testowe M1-M6 razem; ruch normalny bez heartbeatu IoT;
 % CV (regularność odstępów do jednego celu) oceniony, gdy 0 < CV < 1 (baseline_model.assessed);
-% „Z oceną CV”: odsetek przepływów z ocenioną regularnością, „Mediana CV”: wśród nich
+% 'Z oceną CV': odsetek przepływów z ocenioną regularnością, 'Mediana CV': wśród nich
 \begin{tabular}{lrrrrrrr}
 \toprule
 Ruch & Przepływy & \begin{tabular}[b]{@{}c@{}}Przepływy \\ {}/ 60~s\end{tabular} & \begin{tabular}[b]{@{}c@{}}Cele \\ {}/ 60~s\end{tabular} & \begin{tabular}[b]{@{}c@{}}Porty \\ {}/ 60~s\end{tabular} & \begin{tabular}[b]{@{}c@{}}Udział \\ {}RST\end{tabular} & \begin{tabular}[b]{@{}c@{}}Z oceną \\ {}CV\end{tabular} & \begin{tabular}[b]{@{}c@{}}Mediana \\ {}CV\end{tabular} \\
 \midrule
-ruch normalny & 25\,234 & 7 & 3 & 2 & 0,00 & 48\% & 0,618 \\
+ruch normalny & 25\,239 & 7 & 3 & 2 & 0,00 & 48\% & 0,617 \\
 heartbeat IoT & 363 & 1 & 1 & 1 & 0,00 & 93\% & 0,025 \\
 \midrule
-A1 skan portów & 122\,938 & 2566 & 5 & 650 & 1,00 & 95\% & 0,393 \\
-A2 brute-force SSH & 414 & 15 & 3 & 3 & 0,00 & $<1$\% & 0,956 \\
-A3 wolny DoS & 5097 & 126 & 1 & 1 & 0,99 & 0\% & -- \\
-A4 HTTP flood & 49\,254 & 1120 & 1 & 1 & 0,00 & 29\% & 0,871 \\
+A1 skan portów & 122\,947 & 2566 & 5 & 652 & 1,00 & 95\% & 0,394 \\
+A2 brute-force SSH & 414 & 15 & 3 & 3 & 0,00 & 0\% & -- \\
+A3 wolny DoS & 5097 & 129 & 1 & 1 & 0,99 & 0\% & -- \\
+A4 HTTP flood & 49\,156 & 1118 & 1 & 1 & 0,00 & 31\% & 0,872 \\
 Z1 beaconing C2 & 168 & 2 & 1 & 1 & 0,00 & 45\% & 0,104 \\
 \bottomrule
 \end{tabular}

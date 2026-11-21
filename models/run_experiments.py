@@ -1,42 +1,16 @@
 #!/usr/bin/env python3
-"""Eksperymenty S0 i S1 dla wszystkich modeli: baseline, Isolation Forest, Random Forest, FlowTransformer.
+r"""Eksperymenty S0 i S1 dla baseline, Isolation Forest, Random Forest i FlowTransformera.
 
-S0 - trening i test na zbiorze źródłowym (ta sama domena, punkt odniesienia),
-S1 - trening na całym zbiorze źródłowym, test na sesjach z Mininetu (transfer bezpośredni).
-
-Podział w S0: podział po nagraniach (dniach) wyrzuciłby całe ataki z treningu albo z testu, bo
-każdy atak jest tylko w jednym nagraniu, a w CIC ataki z jednego dnia mają osobne okna czasowe.
-Dzielę więc w czasie każdy fragment = (nagranie, klasa): pierwsze 70% przepływów to trening,
-ostatnie 30% to test. Bez losowania, więc prawie identyczne sąsiednie przepływy nie trafiają
-jednocześnie do treningu i do testu (Arp i in. 2022, pułapka P3).
-
-Walidacja: ostatnie 15% (w czasie) każdego fragmentu części treningowej. Na niej wyznaczam próg
-każdego modelu (ok. 1% FPR) i zatrzymuję trening FlowTransformera; modele się na niej nie uczą.
-Przepływy "attempted" (atak bez danych od atakującego) i "poza_zakresem" usuwam z treningu i testu.
-
-Dwa warianty zbioru źródłowego (wariant = nazwy plików z --source połączone "+"):
-  sam CIC-IDS2017:  --source data/flows/cic.parquet
-  CIC + GeNIS:      --source data/flows/cic.parquet data/flows/genis.parquet
-Przy kilku plikach zbiory są sklejane (każdy z kolumną source), a próbka ma stały limit na każdą parę
-(źródło, klasa), więc każdy zbiór daje tyle samo przepływów danej klasy (o ile ma ich dość).
-
-Wszystkie modele uczą się na tej samej próbce: najwyżej 20 000 przepływów z każdej pary (źródło, klasa).
-Cechy okienkowe i historię okien FlowTransformera biorę z pełnych danych: z przepływami attempted
-i poza_zakresem i bez podziału w czasie (load_source/load_session zwracają pełną tabelę z kolumną row,
-a tabele do treningu i testu zachowują row, więc okno FT sięga po historię do pełnej tabeli).
-IF, RF i baseline dostają cechy przepływu + cechy okienkowe; FlowTransformer tylko cechy przepływu,
-bo kontekst hosta daje mu okno 8 poprzednich przepływów.
-
-Wyniki:
-  results/S0_S1/<wariant>/metrics.csv            - metryki i koszt dla każdego scenariusza, zbioru testowego i modelu,
-  results/S0_S1/<wariant>/recall_per_attack.csv  - recall osobno dla każdego ataku,
-  results/S0_S1/<wariant>/confusion.csv          - macierze pomyłek (klasa × alarm; dla RF klasa × klasa),
-  results/raw/S1_<wariant>_<sesja>/              - predykcje S1 w formacie dashboardu (app/dashboard.py),
-  models/artifacts/S1/<wariant>/                 - modele z S1 (do S2).
-W S0 test jest liczony osobno dla każdego źródła, więc oba warianty da się porównać na tym samym teście CIC.
+S0: trening i test na zbiorze źródłowym (pierwsze 70% w czasie / ostatnie 30%, osobno w każdej parze
+(nagranie, klasa), a nie na wspólnej osi czasu), punkt odniesienia.
+S1: trening na całym zbiorze źródłowym, test na sesjach M1-M6 z Mininetu.
+Walidacja = ostatnie 15% części treningowej (progi przy ok. 1% FPR, zatrzymanie FT). Próbka: najwyżej
+20 000 przepływów na parę (źródło, klasa). Wyniki do results/S0_S1/<wariant>/ i results/raw/,
+modele S1 do models/artifacts/S1/<wariant>/ (dla run_s2.py).
 
     /root/venvs/ft/bin/python models/run_experiments.py --source data/flows/cic.parquet \
         --sessions data/flows/M1.parquet data/flows/M2.parquet
+    (wariant CIC + GeNIS: --source data/flows/cic.parquet data/flows/genis.parquet)
 """
 import argparse
 import json
@@ -52,60 +26,59 @@ RESULTS = os.path.join(HERE, "..", "results")
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "features"))
 
-import keras  # noqa: E402
-import baseline_model  # noqa: E402
-import classic_models  # noqa: E402
-import flow_features  # noqa: E402
-import flowtransformer_model as ftm  # noqa: E402
-from window_features import WINDOW_FEATURES, add_window_features  # noqa: E402
+import keras  #noqa: E402
+import baseline_model  #noqa: E402
+import classic_models  #noqa: E402
+import flow_features  #noqa: E402
+import flowtransformer_model as ftm  #noqa: E402
+from window_features import WINDOW_FEATURES, add_window_features  #noqa: E402
 
 RANDOM_SEED = 42
 FLOWS_PER_CLASS = 20000
 TRAINING_SHARE_S0 = 0.7
-VALIDATION_SHARE = 0.15  # końcówka treningu (w czasie): progi wszystkich modeli i zatrzymanie FT
-NOT_USED = ["poza_zakresem", "attempted"]  # klasy usuwane z treningu i testu
+VALIDATION_SHARE = 0.15  #końcówka treningu (w czasie): progi wszystkich modeli i zatrzymanie FT
+NOT_USED = ["poza_zakresem", "attempted"]  #klasy usuwane z treningu i testu
 MAX_EPOCHS = 20
-PATIENCE = 3             # ile epok bez poprawy PR-AUC na walidacji, zanim trening się zatrzyma
+PATIENCE = 3             #ile epok bez poprawy PR-AUC na walidacji, zanim trening się zatrzyma
 BATCH_SIZE = 128
 MODELS = ["baseline", "IF", "RF", "FT"]
-PREDICT_CHUNK = 200_000  # tyle okien FT naraz przy predykcji (ogranicza zużycie pamięci)
-IOT_IP = "10.0.1.17"  # q2, heartbeat IoT (env/topology.py): legalna regularność, trudny przypadek dla Z1
+PREDICT_CHUNK = 200_000  #tyle okien FT naraz przy predykcji (ogranicza zużycie pamięci)
+IOT_IP = "10.0.1.17"  #q2, heartbeat IoT (env/topology.py): legalna regularność, trudny przypadek dla Z1
 
-# koniec przepływu: dashboard liczy od niego opóźnienie detekcji (wynik modelu jest znany dopiero
-# po zakończeniu i eksporcie przepływu, a nie w chwili jego startu)
+#koniec przepływu (ostatni pakiet): dashboard liczy od niego opóźnienie detekcji (wynik modelu jest znany
+#dopiero po eksporcie przepływu, a nie w chwili jego startu; przy zamknięciu po 60 s bezczynności
+#eksport jest jeszcze ok. 60 s później, więc opóźnienie jest tu oszacowaniem z dołu)
 PREDICTION_COLUMNS = ["bidirectional_first_seen_ms", "bidirectional_last_seen_ms", "src_ip", "dst_ip",
                       "dst_port", "protocol", "attack_type", "label"]
 
 
-# ---------------------------------------------------------------- podział i próbka
+#---------------------------------------------------------------- podział i próbka
 
-# Pozycja przepływu w czasie w jego fragmencie: od 0 (pierwszy) do 1 (ostatni).
-#
-# Fragment = jedna klasa w jednym nagraniu (np. slowloris w środę CIC albo ruch normalny w środę).
-# Dzięki temu każdy atak trafia częściowo do treningu i częściowo do testu, nawet gdy w nagraniu
-# ataki idą jeden po drugim (w CIC ataki z jednego dnia mają osobne okna czasowe).
+#miejsce przepływu w czasie w jego fragmencie: od 0 (pierwszy) do 1 (ostatni)
+#fragment = jedna klasa w jednym nagraniu (np. slowloris w środę CIC), więc każdy atak trafia
+#częściowo do treningu i częściowo do testu; podział nie idzie po wspólnej osi czasu (np. testowy
+#slowloris ze środy jest wcześniejszy niż część treningowego ruchu normalnego z tego dnia)
 def time_position(flows):
     groups = ["attack_type"]
     if "recording" in flows.columns:
         groups = ["recording", "attack_type"]
-    # rank(pct=True) = miejsce przepływu w kolejności startu w jego fragmencie jako ułamek (1/n ... 1);
-    # method="first" daje różne miejsca także przy tym samym czasie startu
+    #miejsce w kolejności startu jako ułamek (1/n ... 1); przy tym samym czasie startu każdy dostaje inne miejsce
     ranks = flows.groupby(groups)["bidirectional_first_seen_ms"].rank(method="first", pct=True)
     return ranks.to_numpy()
 
 
-# Podział w czasie: pierwsze first_share przepływów każdego fragmentu i reszta (np. 70% / 30% w S0).
+#podział w czasie: pierwsze first_share przepływów każdego fragmentu i reszta (np. 70% / 30% w S0)
 def split_in_time(flows, first_share):
     is_first = time_position(flows) <= first_share
     return flows[is_first].reset_index(drop=True), flows[~is_first].reset_index(drop=True)
 
 
-# Prawda dla przepływów z próbki: najwyżej FLOWS_PER_CLASS z każdej pary (źródło, klasa).
+#wybór próbki: najwyżej 20 000 przepływów z każdej pary (źródło, klasa), zawsze ta sama
 def sample_mask(flows):
     generator = np.random.default_rng(RANDOM_SEED)
     in_sample = np.zeros(len(flows), dtype=bool)
-    groups = flows.groupby(["source", "attack_type"]).indices  # para -> numery jej wierszy
-    for key in sorted(groups):  # stała kolejność = ta sama próbka przy każdym uruchomieniu
+    groups = flows.groupby(["source", "attack_type"]).indices  #para -> numery jej wierszy
+    for key in sorted(groups):  #stała kolejność = ta sama próbka przy każdym uruchomieniu
         rows = groups[key]
         if len(rows) > FLOWS_PER_CLASS:
             rows = generator.choice(rows, FLOWS_PER_CLASS, replace=False)
@@ -113,25 +86,23 @@ def sample_mask(flows):
     return in_sample
 
 
-# Pełna tabela dostaje kolumnę row = numer wiersza. Tabele do treningu i testu (usable i ich podziały)
-# zachowują row, więc okno FT każdego przepływu sięga po historię do pełnej tabeli.
+#dodaje kolumnę row = numer wiersza w pełnej tabeli; po niej okno FT znajduje historię hosta
 def numbered(flows):
     flows = flows.reset_index(drop=True)
     flows["row"] = np.arange(len(flows))
     return flows
 
 
-# Przepływy do treningu i testu: bez attempted i poza_zakresem (zostają tylko w pełnej tabeli jako historia).
+#przepływy do treningu i testu: bez attempted i poza_zakresem (zostają tylko jako historia hosta)
 def usable(full):
     removed = full[full["attack_type"].isin(NOT_USED)]["attack_type"]
     print("Usuwane z treningu i testu:", removed.value_counts().to_dict())
     return full[~full["attack_type"].isin(NOT_USED)].reset_index(drop=True)
 
 
-# Wczytuje zbiory źródłowe i skleja je w jedną PEŁNĄ tabelę (z attempted i poza_zakresem).
-#
-# Cechy okienkowe liczę w każdym zbiorze osobno, na pełnych danych. Nazwę nagrania poprzedzam nazwą
-# źródła, żeby okna z dwóch zbiorów nigdy się nie połączyły.
+#wczytuje zbiory źródłowe i skleja w jedną pełną tabelę (razem z attempted i poza_zakresem)
+#cechy kontekstu liczę w każdym zbiorze osobno; nazwa nagrania dostaje przedrostek źródła,
+#żeby historia hosta nie mieszała dwóch zbiorów
 def load_source(paths):
     parts = []
     for path in paths:
@@ -145,52 +116,50 @@ def load_source(paths):
     return numbered(pd.concat(parts, ignore_index=True))
 
 
-# Sesja z Mininetu jako PEŁNA tabela z cechami okienkowymi (do treningu i testu: usable).
+#sesja z Mininetu jako pełna tabela z cechami kontekstu
 def load_session(path):
     flows = add_window_features(pd.read_parquet(path))
     flows["source"] = "mininet"
     return numbered(flows)
 
 
-# ---------------------------------------------------------------- FlowTransformer
+#---------------------------------------------------------------- FlowTransformer
 
-# Wejście FT dla przepływów z tabeli flows (kolumna row): okno 8 ostatnich przepływów hosta z pełnej
-# tabeli full, cechy przepływu z przygotowaniem z treningu (flowtransformer_model.build_windows).
+#wejście FT: dla każdego przepływu okno 8 ostatnich przepływów jego hosta (z pełnej tabeli full)
 def flowtransformer_inputs(full, flows, preprocessing, spec):
     windows, labels = ftm.build_windows(full, flows["row"].to_numpy(),
                                         lambda part: flow_features.transform_flows(part, preprocessing))
     return ftm.windows_to_model_inputs(windows, spec), labels
 
 
-# Wagi klas: klasa rzadsza waży więcej, żeby nie ginęła przy licznym ruchu normalnym.
-# Wzór jak class_weight="balanced" w scikit-learn: n / (2 * liczność klasy), więc przy 50/50 obie wagi = 1.
+#wagi klas: rzadsza klasa waży więcej, żeby nie zginęła (wzór n / (2 * liczność klasy), jak "balanced")
 def balanced_class_weight(labels):
     attacks = labels.sum()
     normals = len(labels) - attacks
     return {0: len(labels) / (2 * normals), 1: len(labels) / (2 * attacks)}
 
 
-# Trening (albo dostrajanie) z wczesnym zatrzymaniem na walidacji; próg z walidacji.
-# Zwraca (próg, epoki): epoki = {"runs": liczba przebiegów, "best": epoka, z której są wagi}.
-# Keras 3 przywraca najlepsze wagi na końcu treningu zawsze (także gdy doszedł do limitu epok),
-# więc model po treningu to wagi z epoki "best", a nie z ostatniej.
+#trening albo dostrajanie FT: stop po 3 epokach bez poprawy na walidacji, potem próg z walidacji
+#zwraca próg i epoki (ile przebiegów i z której epoki są wagi - Keras przywraca najlepsze wagi)
 def fit_flowtransformer(model, train_inputs, train_labels, validation_inputs, validation_labels, max_epochs):
     stop = keras.callbacks.EarlyStopping(monitor="val_pr_auc", mode="max", patience=PATIENCE,
                                          restore_best_weights=True)
+    start = time.time()
     history = model.fit(train_inputs, train_labels, validation_data=(validation_inputs, validation_labels),
                         epochs=max_epochs, batch_size=BATCH_SIZE, class_weight=balanced_class_weight(train_labels),
                         callbacks=[stop], verbose=2)
-    # próg z walidacji, nie z danych, na których model się uczył (Arp i in. 2022, pułapka P5)
+    fit_seconds = time.time() - start  #czas treningu FT = sam fit, jak dla IF i RF
+    #próg z walidacji, nie z danych, na których model się uczył
     validation_scores = model.predict(validation_inputs, batch_size=1024, verbose=0).reshape(-1)
-    epochs = {"runs": len(history.epoch), "best": int(stop.best_epoch) + 1}  # best_epoch liczy od 0
+    epochs = {"runs": len(history.epoch), "best": int(stop.best_epoch) + 1,  #best_epoch liczy od 0
+              "fit_seconds": fit_seconds}
     return classic_models.choose_threshold(validation_scores, validation_labels), epochs
 
 
-# Trening FlowTransformera od zera: przygotowanie cech dopasowane na części do uczenia, okna dla przepływów
-# z próbki (trening) i z walidacji, z historią z pełnej tabeli full. Zwraca (model, przygotowanie, próg, epoki).
+#trening FT od zera: przygotowanie cech z części do uczenia, okna dla próbki i walidacji, trening, próg
 def train_flowtransformer(train_part, sample, validation_flows, full):
-    keras.utils.set_random_seed(RANDOM_SEED)  # ta sama inicjalizacja wag przy każdym uruchomieniu
-    # FT nie dostaje cech kontekstu hosta: kontekst daje mu okno 8 poprzednich przepływów
+    keras.utils.set_random_seed(RANDOM_SEED)  #ta sama inicjalizacja wag przy każdym uruchomieniu
+    #FT nie dostaje cech kontekstu hosta: kontekst daje mu okno (7 poprzednich przepływów hosta i bieżący)
     preprocessing = flow_features.fit_preprocessing(train_part.drop(columns=WINDOW_FEATURES))
     spec = ftm.model_input_specification(preprocessing)
     train_inputs, train_labels = flowtransformer_inputs(full, sample, preprocessing, spec)
@@ -201,8 +170,7 @@ def train_flowtransformer(train_part, sample, validation_flows, full):
     return model, preprocessing, threshold, epochs
 
 
-# Wynik FT (prawdopodobieństwo ataku) dla każdego przepływu tabeli flows, w kolejności jej wierszy;
-# historia okien z pełnej tabeli full. Po PREDICT_CHUNK przepływów naraz, żeby okna nie zajęły całej pamięci.
+#wynik FT (prawdopodobieństwo ataku) dla każdego przepływu; po 200 000 naraz, żeby starczyło pamięci
 def flowtransformer_scores(model, preprocessing, flows, full):
     spec = ftm.model_input_specification(preprocessing)
     scores = []
@@ -212,13 +180,11 @@ def flowtransformer_scores(model, preprocessing, flows, full):
     return np.concatenate(scores) if scores else np.zeros(0)
 
 
-# ---------------------------------------------------------------- trening i wyniki wszystkich modeli
+#---------------------------------------------------------------- trening i wyniki wszystkich modeli
 
-# Baseline, Isolation Forest i Random Forest; progi z walidacji (ok. 1% FPR).
-#
-# training / features      - przepływy do uczenia i ich cechy (te same wiersze),
-# baseline_training        - przepływy, z których baseline bierze progi (domyślnie training),
-# sample_weight            - wagi przepływów dla Random Forest (S2: M0 waży tyle, co źródło).
+#uczy baseline, IF i RF, a każdemu ustawia próg na walidacji (ok. 1% FPR)
+#train_seconds = sam fit (bez przygotowania cech i wyboru progu), tak samo jak dla FT
+#baseline_training = skąd baseline bierze progi (w S2 tylko M0), sample_weight = wagi przepływów dla RF
 def train_classic(training, features, validation_flows, validation_features, baseline_training=None,
                   sample_weight=None):
     labels = training["label"].to_numpy()
@@ -247,9 +213,8 @@ def train_classic(training, features, validation_flows, validation_features, bas
     return models
 
 
-# Podział na część do uczenia i walidację (ostatnie 15% w czasie każdego fragmentu) oraz próbki z obu.
-# Zwraca (część do uczenia, próbka treningowa, próbka walidacyjna). run_s2.py bierze stąd tę samą
-# próbkę źródła co S1.
+#dzieli na część do uczenia i walidację (ostatnie 15% w czasie) i z obu wybiera próbkę
+#run_s2.py używa tej funkcji, żeby mieć tę samą próbkę źródła co w S1
 def split_and_sample(flows):
     in_train_part = time_position(flows) <= 1 - VALIDATION_SHARE
     train_part = flows[in_train_part].reset_index(drop=True)
@@ -259,32 +224,27 @@ def split_and_sample(flows):
     return train_part, sample, validation_flows
 
 
-# Uczy wszystkie modele na tej samej próbce, a progi wyznacza na walidacji.
-#
-# Walidacja = ostatnie 15% (w czasie) każdego fragmentu części treningowej. Model się na niej nie
-# uczy; służy do progu przy ok. 1% FPR i do wczesnego zatrzymania FlowTransformera.
-# full = pełna tabela źródła (historia okien FT).
+#uczy wszystkie modele na tej samej próbce; walidacja (na niej model się nie uczy) daje progi
+#i moment zatrzymania treningu FT
 def train_all(training_flows, full):
     train_part, sample, validation_flows = split_and_sample(training_flows)
     print("Próbka treningowa:", sample.groupby(["source", "attack_type"]).size().to_dict())
     print("Walidacja (progi):", validation_flows.groupby(["source", "attack_type"]).size().to_dict())
 
-    # IF i RF: cechy przepływu + cechy okienkowe (preprocessing z części do uczenia)
+    #IF i RF: cechy przepływu + cechy okienkowe (preprocessing z części do uczenia)
     preprocessing = flow_features.fit_preprocessing(train_part)
     models = train_classic(sample, flow_features.transform_flows(sample, preprocessing), validation_flows,
                            flow_features.transform_flows(validation_flows, preprocessing))
 
-    start = time.time()
     model, ft_preprocessing, threshold, epochs = train_flowtransformer(train_part, sample, validation_flows, full)
-    models["FT"] = {"model": model, "threshold": threshold, "train_seconds": time.time() - start,
+    models["FT"] = {"model": model, "threshold": threshold, "train_seconds": epochs["fit_seconds"],
                     "preprocessing": ft_preprocessing, "epochs": epochs}
 
     models["preprocessing"] = preprocessing
     return models
 
 
-# Wyniki jednego modelu (baseline, IF, RF albo FT) dla tabeli przepływów; większy wynik = bardziej atak.
-# full = pełna tabela, z której pochodzą przepływy (historia okien FT).
+#wyniki jednego modelu dla przepływów; większy wynik = bardziej podobne do ataku
 def model_scores(name, models, flows, full):
     if name == "baseline":
         return baseline_model.baseline_scores(flows, models["baseline"]["model"])
@@ -296,10 +256,8 @@ def model_scores(name, models, flows, full):
     return classic_models.random_forest_scores(models["RF"]["model"], features)
 
 
-# Wyniki wszystkich modeli na każdym zbiorze testowym. test_sets: nazwa -> (przepływy testowe, pełna
-# tabela, z której pochodzą). Zwraca (metryki, recall per atak, macierze pomyłek, wyniki).
-# Macierz pomyłek (wiersze true / predicted / count): dla każdego modelu prawdziwa klasa × alarm albo
-# brak alarmu, a dla RF dodatkowo prawdziwa klasa × przewidziana klasa (model "RF (klasy)").
+#testuje wszystkie modele na każdym zbiorze testowym: metryki, recall każdego ataku, macierze pomyłek
+#macierz: prawdziwa klasa x alarm / brak alarmu, a dla RF też prawdziwa klasa x przewidziana klasa
 def evaluate_all(scenario, models, test_sets):
     metric_rows = []
     attack_rows = []
@@ -316,7 +274,7 @@ def evaluate_all(scenario, models, test_sets):
             all_scores[test_name][name] = scores
             threshold = models[name]["threshold"]
             result = classic_models.evaluate(labels, scores, threshold)
-            # FPR liczony tylko na ruchu normalnym hosta IoT: jak często legalny heartbeat wygląda na atak
+            #FPR liczony tylko na ruchu normalnym hosta IoT: jak często legalny heartbeat wygląda na atak
             iot_normal = (test_flows["src_ip"] == IOT_IP).to_numpy() & (labels == 0)
             fpr_iot = float(np.mean(scores[iot_normal] > threshold)) if iot_normal.any() else float("nan")
             metric_rows.append({
@@ -329,7 +287,7 @@ def evaluate_all(scenario, models, test_sets):
                 "tp": result["tp"], "fp": result["fp"], "fn": result["fn"], "tn": result["tn"],
                 "threshold": threshold, "train_seconds": round(models[name]["train_seconds"], 1),
                 "flows_per_second": round(len(test_flows) / max(seconds, 1e-6)),
-                # tylko FT: liczba przebiegów treningu (albo dostrajania) i epoka, z której są wagi
+                #tylko FT: liczba przebiegów treningu (albo dostrajania) i epoka, z której są wagi
                 "epochs_run": models[name].get("epochs", {}).get("runs"),
                 "best_epoch": models[name].get("epochs", {}).get("best"),
             })
@@ -347,10 +305,10 @@ def evaluate_all(scenario, models, test_sets):
     return metric_rows, attack_rows, confusion, all_scores
 
 
-# ---------------------------------------------------------------- zapis
+#---------------------------------------------------------------- zapis
 
-# Zapis modeli z S1 do models/artifacts/S1/<wariant>/: progi baseline'u, IF i RF (joblib), oba
-# przygotowania cech (JSON), wagi FT i progi. run_s2.py wczytuje stąd wagi FT do dostrajania.
+#zapis modeli z S1 do models/artifacts/S1/<wariant>/: progi baseline'u, IF i RF (joblib), oba
+#przygotowania cech (JSON), wagi FT i progi. run_s2.py wczytuje stąd wagi FT do dostrajania.
 def save_s1_models(models, folder):
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(folder, "baseline_limits.json"), "w") as f:
@@ -365,8 +323,8 @@ def save_s1_models(models, folder):
         json.dump(thresholds, f, indent=2)
 
 
-# Format, który czyta app/dashboard.py: przepływy, wyniki modeli, progi i opis biegu
-# (scenariusz S1 albo S2, sesja, wariant zbioru źródłowego). Używa go też run_s2.py.
+#format, który czyta app/dashboard.py: przepływy, wyniki modeli, progi i opis biegu
+#(scenariusz S1 albo S2, sesja, wariant zbioru źródłowego). Używa go też run_s2.py.
 def save_dashboard_predictions(test_flows, scores, models, folder, session, source, scenario="S1"):
     os.makedirs(folder, exist_ok=True)
     out = test_flows[PREDICTION_COLUMNS].copy()
@@ -379,8 +337,8 @@ def save_dashboard_predictions(test_flows, scores, models, folder, session, sour
         json.dump({"scenario": scenario, "session": session, "source": source}, f, indent=2)
 
 
-# S0 i S1 po kolei dla jednego wariantu zbioru źródłowego; wyniki do results/S0_S1/<wariant>/,
-# predykcje S1 dla dashboardu do results/raw/, modele S1 do models/artifacts/.
+#S0 i S1 po kolei dla jednego wariantu zbioru źródłowego; wyniki do results/S0_S1/<wariant>/,
+#predykcje S1 dla dashboardu do results/raw/, modele S1 do models/artifacts/.
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", nargs="+", required=True,
@@ -388,11 +346,11 @@ def main():
     parser.add_argument("--sessions", nargs="+", required=True, help="sesje z Mininetu do S1")
     args = parser.parse_args()
 
-    # nazwa wariantu z nazw plików, np. "cic" albo "cic+genis"
+    #nazwa wariantu z nazw plików, np. "cic" albo "cic+genis"
     variant = "+".join(os.path.basename(path).replace(".parquet", "") for path in args.source)
     full_source = load_source(args.source)
     source = usable(full_source)
-    sessions = {}  # nazwa sesji -> (przepływy testowe, pełna tabela sesji)
+    sessions = {}  #nazwa sesji -> (przepływy testowe, pełna tabela sesji)
     for path in args.sessions:
         full = load_session(path)
         sessions[os.path.basename(path).replace(".parquet", "")] = (usable(full), full)
@@ -400,14 +358,14 @@ def main():
     print("\n=== S0: trening i test na zbiorze źródłowym ===")
     training, test = split_in_time(source, TRAINING_SHARE_S0)
     models = train_all(training, full_source)
-    # test S0 osobno dla każdego źródła, żeby oba warianty dało się porównać na tym samym teście CIC
+    #test S0 osobno dla każdego źródła, żeby oba warianty dało się porównać na tym samym teście CIC
     test_sets = {}
     for name in sorted(test["source"].unique()):
         test_sets[f"{name}_test"] = (test[test["source"] == name].reset_index(drop=True), full_source)
     s0_metrics, s0_attacks, s0_confusion, _ = evaluate_all("S0", models, test_sets)
 
     print("\n=== S1: trening na całym zbiorze źródłowym, test na Mininecie ===")
-    models = train_all(source, full_source)  # modele uczone od nowa, tym razem na całym źródle (bez podziału 70/30)
+    models = train_all(source, full_source)  #modele uczone od nowa, tym razem na całym źródle (bez podziału 70/30)
     s1_metrics, s1_attacks, s1_confusion, s1_scores = evaluate_all("S1", models, sessions)
     save_s1_models(models, os.path.join(HERE, "artifacts", "S1", variant))
     for session, (flows, _) in sessions.items():

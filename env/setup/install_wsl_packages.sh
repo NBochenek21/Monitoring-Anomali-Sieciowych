@@ -5,7 +5,7 @@ set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
-# Mininet i sieć (net-tools: Mininet sam używa ifconfig), nagrywanie i obróbka PCAP
+# Mininet i sieć (net-tools: mininet sam używa ifconfig), nagrywanie i obróbka PCAP
 # (wireshark-common: editcap, reordercap), dig, curl, pip i venv. PyYAML pochodzi z apt (python3-yaml
 # 5.4.1): z pip wersja 5.4.1 nie buduje się na Pythonie 3.10, a pip tylko uznaje wersję z apt za
 # spełniającą wpis w requirements-extract.txt. Wersje apt nie są przypięte (Ubuntu usuwa stare wersje
@@ -17,8 +17,8 @@ apt-get install -y \
   net-tools dnsutils curl \
   python3-pip python3-venv python3-yaml
 
-# IPv6 wyłączone na stałe w WSL: porty switchy Mininetu powstają w głównej przestrzeni nazw
-# i od razu nie mają IPv6. Hosty Mininetu wyłączają IPv6 same (env/topology.py, LabHost),
+# IPv6 wyłączone na stałe w WSL: porty switchy mininetu powstają w głównej przestrzeni nazw
+# i od razu nie mają IPv6. Hosty minineta wyłączają IPv6 same (env/topology.py, LabHost),
 # bo jądro nie przenosi tego ustawienia do nowych przestrzeni nazw. Bez tego pliku
 # topology.build() kończy program z komunikatem.
 cat > /etc/sysctl.d/90-lab-ipv6.conf <<'EOF'

@@ -1,68 +1,344 @@
-@Book{Lam92,
-author = {Lamport, L.},
-title = {LaTeX system przygotowywania dokumentów},
-publisher = {Wydawnictwo Ariel},
-year = {1992},
-address = {Kraków},
+% Bibliografia pracy: 26 prac naukowych i dokumentacja narzedzi.
+% Dane prac z DOI sprawdzone w Crossref. biblatex drukuje tylko pozycje cytowane w tekscie.
+% @online: dopisac urldate (data dostepu, RRRR-MM-DD) przed oddaniem pracy.
 
-langid = {polish},
+% ---------------------------------------------------------------- zbiory danych i ich bledy
+
+@inproceedings{sharafaldin2018,
+  author    = {Sharafaldin, Iman and Habibi Lashkari, Arash and Ghorbani, Ali A.},
+  title     = {Toward Generating a New Intrusion Detection Dataset and Intrusion Traffic Characterization},
+  booktitle = {Proceedings of the 4th International Conference on Information Systems Security and Privacy (ICISSP)},
+  publisher = {SciTePress},
+  year      = {2018},
+  pages     = {108--116},
+  doi       = {10.5220/0006639801080116},
 }
 
-@Book{Dil00,
-author = {Diller, A.},
-title = {LaTeX wiersz po wierszu},
-publisher = {Wydawnictwo Helion},
-year = {2000},
-address = {Gliwice},
-
-langid = {polish},
+@inproceedings{engelen2021,
+  author    = {Engelen, Gints and Rimmer, Vera and Joosen, Wouter},
+  title     = {Troubleshooting an Intrusion Detection Dataset: the {CICIDS2017} Case Study},
+  booktitle = {2021 IEEE Security and Privacy Workshops (SPW)},
+  publisher = {IEEE},
+  year      = {2021},
+  pages     = {7--12},
+  doi       = {10.1109/SPW53761.2021.00009},
 }
 
-
-@Manual{ARM06,
-title = {Ada Reference Manual {ISO}/{IEC} 8652:200y({E}) {E}d. 3},
-organization = {Ada Europe},
-year = {2006}
+@inproceedings{liu2022,
+  author    = {Liu, Lisa and Engelen, Gints and Lynar, Timothy and Essam, Daryl and Joosen, Wouter},
+  title     = {Error Prevalence in {NIDS} datasets: A Case Study on {CIC-IDS-2017} and {CSE-CIC-IDS-2018}},
+  booktitle = {2022 IEEE Conference on Communications and Network Security (CNS)},
+  publisher = {IEEE},
+  year      = {2022},
+  pages     = {254--262},
+  doi       = {10.1109/CNS56114.2022.9947235},
 }
 
-@Article{BuDo03,
-author = {Burns, A. and Dobbing, B.},
-title = {The {R}avenscar {P}rofile for Real--Time and High Integrity Systems},
-journal = {Cross{T}alk},
-year = {2003},
-volume = {16},
-number = {11},
-pages = {9--12}
+@inproceedings{lanvin2023,
+  author    = {Lanvin, Maxime and Gimenez, Pierre-Fran{\c{c}}ois and Han, Yufei and Majorczyk, Fr{\'e}d{\'e}ric and M{\'e}, Ludovic and Totel, {\'E}ric},
+  title     = {Errors in the {CICIDS2017} Dataset and the Significant Differences in Detection Performances It Makes},
+  booktitle = {Risks and Security of Internet and Systems (CRiSIS 2022)},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {13857},
+  publisher = {Springer},
+  year      = {2023},
+  pages     = {18--33},
+  doi       = {10.1007/978-3-031-31108-6_2},
 }
 
-
-
-@InProceedings{PeDa04,
-author = {Peleska, J. and Große, D. and Haxthausen, A. E. and Drechsler, R.},
-title = {Automated Verification for Train Control Systems},
-booktitle = {Proc. of the 5th Symposium on Formal Methods for Automation and Safety in Railway and Automotive Systems (FORMS/FORMAT 2004)},
-year = {2004},
-pages = {252--265},
-address = {Braunschweig, Germany},
-month = {December}
+@article{pekar2024,
+  author  = {Pekar, Adrian and Jozsa, Richard},
+  title   = {Evaluating {ML}-based anomaly detection across datasets of varied integrity: A case study},
+  journal = {Computer Networks},
+  volume  = {251},
+  pages   = {110617},
+  year    = {2024},
+  doi     = {10.1016/j.comnet.2024.110617},
 }
 
-@TechReport{BuDoVa03,
-author = {Burns, A. and Dobbing, B. and Vardanega, T.},
-title = {Guide for the Use of the Ada Ravenscar Profile in High Integrity Systems},
-institution = {University of York},
-year = {2003},
-number = {YCS-2003-348}
+@article{silva2025,
+  author  = {Silva, Miguel and Pinto, Daniela and Vitorino, Jo{\~a}o and Gon{\c{c}}alves, Jos{\'e} and Maia, Eva and Pra{\c{c}}a, Isabel},
+  title   = {{GeNIS}: A modular dataset for network intrusion detection and classification},
+  journal = {Data in Brief},
+  volume  = {60},
+  pages   = {111487},
+  year    = {2025},
+  doi     = {10.1016/j.dib.2025.111487},
 }
 
+@article{goldschmidt2025,
+  author  = {Goldschmidt, Patrik and Chud{\'a}, Daniela},
+  title   = {Network intrusion datasets: A survey, limitations, and recommendations},
+  journal = {Computers \& Security},
+  volume  = {156},
+  pages   = {104510},
+  year    = {2025},
+  doi     = {10.1016/j.cose.2025.104510},
+}
 
+% ---------------------------------------------------------------- uczenie maszynowe w NIDS i transfer
 
-@manual{Alvis2011,
-	organization = {AGH University of Science and Technology},
-	year = {2011},
-	title = {{On Line Alvis Manual}},
-	note = {\\\texttt{http://fm.ia.agh.edu.pl/alvis:manual}},
-	author = {Szpyrka, M.},
+@inproceedings{sommer2010,
+  author    = {Sommer, Robin and Paxson, Vern},
+  title     = {Outside the Closed World: On Using Machine Learning for Network Intrusion Detection},
+  booktitle = {2010 IEEE Symposium on Security and Privacy},
+  publisher = {IEEE},
+  year      = {2010},
+  pages     = {305--316},
+  doi       = {10.1109/SP.2010.25},
+}
 
-	langid = {english},
+@article{cantone2024,
+  author  = {Cantone, Marco and Marrocco, Claudio and Bria, Alessandro},
+  title   = {Machine Learning in Network Intrusion Detection: A Cross-Dataset Generalization Study},
+  journal = {IEEE Access},
+  volume  = {12},
+  pages   = {144489--144508},
+  year    = {2024},
+  doi     = {10.1109/ACCESS.2024.3472907},
+}
+
+@article{layeghy2023,
+  author  = {Layeghy, Siamak and Portmann, Marius},
+  title   = {Explainable Cross-domain Evaluation of {ML}-based Network Intrusion Detection Systems},
+  journal = {Computers and Electrical Engineering},
+  volume  = {108},
+  pages   = {108692},
+  year    = {2023},
+  doi     = {10.1016/j.compeleceng.2023.108692},
+}
+
+@article{verkerken2022,
+  author  = {Verkerken, Miel and D'hooge, Laurens and Wauters, Tim and Volckaert, Bruno and De Turck, Filip},
+  title   = {Towards Model Generalization for Intrusion Detection: Unsupervised Machine Learning Techniques},
+  journal = {Journal of Network and Systems Management},
+  volume  = {30},
+  number  = {1},
+  eid     = {12},
+  year    = {2022},
+  doi     = {10.1007/s10922-021-09615-7},
+}
+
+@article{sarhan2022,
+  author  = {Sarhan, Mohanad and Layeghy, Siamak and Portmann, Marius},
+  title   = {Towards a Standard Feature Set for Network Intrusion Detection System Datasets},
+  journal = {Mobile Networks and Applications},
+  volume  = {27},
+  number  = {1},
+  pages   = {357--370},
+  year    = {2022},
+  doi     = {10.1007/s11036-021-01843-0},
+}
+
+@article{sarhan2023,
+  author  = {Sarhan, Mohanad and Layeghy, Siamak and Gallagher, Marcus and Portmann, Marius},
+  title   = {From zero-shot machine learning to zero-day attack detection},
+  journal = {International Journal of Information Security},
+  volume  = {22},
+  number  = {4},
+  pages   = {947--959},
+  year    = {2023},
+  doi     = {10.1007/s10207-023-00676-0},
+}
+
+@article{zhuang2021,
+  author  = {Zhuang, Fuzhen and Qi, Zhiyuan and Duan, Keyu and Xi, Dongbo and Zhu, Yongchun and Zhu, Hengshu and Xiong, Hui and He, Qing},
+  title   = {A Comprehensive Survey on Transfer Learning},
+  journal = {Proceedings of the IEEE},
+  volume  = {109},
+  number  = {1},
+  pages   = {43--76},
+  year    = {2021},
+  doi     = {10.1109/JPROC.2020.3004555},
+}
+
+@inproceedings{apruzzese2023,
+  author    = {Apruzzese, Giovanni and Laskov, Pavel and Schneider, Johannes},
+  title     = {{SoK}: Pragmatic Assessment of Machine Learning for Network Intrusion Detection},
+  booktitle = {2023 IEEE 8th European Symposium on Security and Privacy (EuroS\&P)},
+  publisher = {IEEE},
+  year      = {2023},
+  pages     = {592--614},
+  doi       = {10.1109/EuroSP57164.2023.00042},
+}
+
+@inproceedings{arp2022,
+  author    = {Arp, Daniel and Quiring, Erwin and Pendlebury, Feargus and Warnecke, Alexander and Pierazzi, Fabio and Wressnegger, Christian and Cavallaro, Lorenzo and Rieck, Konrad},
+  title     = {Dos and Don'ts of Machine Learning in Computer Security},
+  booktitle = {31st USENIX Security Symposium (USENIX Security 22)},
+  publisher = {USENIX Association},
+  address   = {Boston, MA},
+  year      = {2022},
+  pages     = {3971--3988},
+}
+
+% ---------------------------------------------------------------- modele
+
+@inproceedings{liu2008,
+  author    = {Liu, Fei Tony and Ting, Kai Ming and Zhou, Zhi-Hua},
+  title     = {Isolation Forest},
+  booktitle = {2008 Eighth IEEE International Conference on Data Mining (ICDM)},
+  publisher = {IEEE},
+  year      = {2008},
+  pages     = {413--422},
+  doi       = {10.1109/ICDM.2008.17},
+}
+
+@article{breiman2001,
+  author  = {Breiman, Leo},
+  title   = {Random Forests},
+  journal = {Machine Learning},
+  volume  = {45},
+  number  = {1},
+  pages   = {5--32},
+  year    = {2001},
+  doi     = {10.1023/A:1010933404324},
+}
+
+@inproceedings{vaswani2017,
+  author    = {Vaswani, Ashish and Shazeer, Noam and Parmar, Niki and Uszkoreit, Jakob and Jones, Llion and Gomez, Aidan N. and Kaiser, {\L}ukasz and Polosukhin, Illia},
+  title     = {Attention Is All You Need},
+  booktitle = {Advances in Neural Information Processing Systems 30 (NIPS 2017)},
+  year      = {2017},
+  pages     = {5998--6008},
+}
+
+@article{manocchio2024,
+  author  = {Manocchio, Liam Daly and Layeghy, Siamak and Lo, Wai Weng and Kulatilleke, Gayan K. and Sarhan, Mohanad and Portmann, Marius},
+  title   = {{FlowTransformer}: A transformer framework for flow-based network intrusion detection systems},
+  journal = {Expert Systems with Applications},
+  volume  = {241},
+  pages   = {122564},
+  year    = {2024},
+  doi     = {10.1016/j.eswa.2023.122564},
+}
+
+% ---------------------------------------------------------------- srodowisko, przeplywy i ruch
+
+@inproceedings{deoliveira2014,
+  author    = {de Oliveira, Rogerio Leao Santos and Schweitzer, Christiane Marie and Shinoda, Ailton Akira and Prete, Ligia Rodrigues},
+  title     = {Using {Mininet} for emulation and prototyping {Software-Defined Networks}},
+  booktitle = {2014 IEEE Colombian Conference on Communications and Computing (COLCOM)},
+  publisher = {IEEE},
+  year      = {2014},
+  pages     = {1--6},
+  doi       = {10.1109/ColComCon.2014.6860404},
+}
+
+@article{aouini2022,
+  author  = {Aouini, Zied and Pekar, Adrian},
+  title   = {{NFStream}: A flexible network data analysis framework},
+  journal = {Computer Networks},
+  volume  = {204},
+  pages   = {108719},
+  year    = {2022},
+  doi     = {10.1016/j.comnet.2021.108719},
+}
+
+@article{paxson1995,
+  author  = {Paxson, Vern and Floyd, Sally},
+  title   = {Wide area traffic: the failure of {Poisson} modeling},
+  journal = {IEEE/ACM Transactions on Networking},
+  volume  = {3},
+  number  = {3},
+  pages   = {226--244},
+  year    = {1995},
+  doi     = {10.1109/90.392383},
+}
+
+@article{crovella1997,
+  author  = {Crovella, Mark E. and Bestavros, Azer},
+  title   = {Self-similarity in {World Wide Web} traffic: evidence and possible causes},
+  journal = {IEEE/ACM Transactions on Networking},
+  volume  = {5},
+  number  = {6},
+  pages   = {835--846},
+  year    = {1997},
+  doi     = {10.1109/90.650143},
+}
+
+@inproceedings{breslau1999,
+  author    = {Breslau, Lee and Cao, Pei and Fan, Li and Phillips, Graham and Shenker, Scott},
+  title     = {Web caching and {Zipf}-like distributions: evidence and implications},
+  booktitle = {IEEE INFOCOM '99: Conference on Computer Communications},
+  volume    = {1},
+  publisher = {IEEE},
+  year      = {1999},
+  pages     = {126--134},
+  doi       = {10.1109/INFCOM.1999.749260},
+}
+
+@inproceedings{oprea2015,
+  author    = {Oprea, Alina and Li, Zhou and Yen, Ting-Fang and Chin, Sang H. and Alrwais, Sumayah},
+  title     = {Detection of Early-Stage Enterprise Infection by Mining Large-Scale Log Data},
+  booktitle = {2015 45th Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN)},
+  publisher = {IEEE},
+  year      = {2015},
+  pages     = {45--56},
+  doi       = {10.1109/DSN.2015.14},
+}
+
+% ---------------------------------------------------------------- dokumentacja i normy (B.3)
+
+@techreport{rfc5737,
+  author      = {Arkko, Jari and Cotton, Michelle and Vegoda, Leo},
+  title       = {{IPv4} Address Blocks Reserved for Documentation},
+  type        = {RFC},
+  number      = {5737},
+  institution = {Internet Engineering Task Force},
+  year        = {2010},
+  doi         = {10.17487/RFC5737},
+}
+
+@techreport{rfc1918,
+  author      = {Rekhter, Yakov and Moskowitz, Robert G. and Karrenberg, Daniel and de Groot, Geert Jan and Lear, Eliot},
+  title       = {Address Allocation for Private Internets},
+  type        = {RFC},
+  number      = {1918},
+  institution = {Internet Engineering Task Force},
+  year        = {1996},
+  doi         = {10.17487/RFC1918},
+}
+
+@techreport{rfc5321,
+  author      = {Klensin, John C.},
+  title       = {Simple Mail Transfer Protocol},
+  type        = {RFC},
+  number      = {5321},
+  institution = {Internet Engineering Task Force},
+  year        = {2008},
+  doi         = {10.17487/RFC5321},
+}
+
+@online{mitreattack,
+  author       = {{MITRE Corporation}},
+  title        = {{MITRE ATT\&CK}: Enterprise Techniques (T1046, T1110.001, T1499.002, T1071.001, T1041)},
+  url          = {https://attack.mitre.org/techniques/enterprise/},
+}
+
+@online{flowtransformerrepo,
+  author       = {Manocchio, Liam Daly},
+  title        = {{FlowTransformer}: repozytorium kodu (commit 52236c8)},
+  url          = {https://github.com/liamdm/FlowTransformer},
+  year         = {2023},
+}
+
+@online{nfstreamdocs,
+  title        = {{NFStream}: dokumentacja},
+  url          = {https://www.nfstream.org/docs/},
+}
+
+@online{mininetdocs,
+  title        = {{Mininet}: dokumentacja},
+  url          = {https://mininet.org/},
+}
+
+@online{netem,
+  title        = {tc-netem(8): {Linux} manual page},
+  url          = {https://man7.org/linux/man-pages/man8/tc-netem.8.html},
+}
+
+@online{wiresharkoffloading,
+  title        = {{Wireshark} Wiki: {CaptureSetup/Offloading}},
+  url          = {https://wiki.wireshark.org/CaptureSetup/Offloading},
 }

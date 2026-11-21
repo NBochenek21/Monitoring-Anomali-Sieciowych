@@ -1,17 +1,18 @@
 % plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
-% średnio na sesję (cost.csv); FT w nawiasie: liczba przebiegów / epoka, z której są wagi
+% trening: jeden model na wariant i scenariusz, przepustowość: średnio na sesję (cost.csv);
+% FT w nawiasie: liczba przebiegów / epoka, z której są wagi
 \begin{tabular}{llrrrr}
 \toprule
 Wariant & Model & \begin{tabular}[b]{@{}c@{}}Trening \\ {}S1 [s]\end{tabular} & \begin{tabular}[b]{@{}c@{}}Adaptacja \\ {}S2 [s]\end{tabular} & \begin{tabular}[b]{@{}c@{}}Przepływy/s \\ {}S1\end{tabular} & \begin{tabular}[b]{@{}c@{}}Przepływy/s \\ {}S2\end{tabular} \\
 \midrule
-CIC & baseline & $<0{,}1$ & $<0{,}1$ & 26,8 mln & 44,7 mln \\
-CIC & IF & 0,2 & 0,3 & 205 tys. & 215 tys. \\
-CIC & RF & 3,5 & 7,8 & 130 tys. & 133 tys. \\
-CIC & FT & 208 (7 / 4) & 104 (10 / 10) & 13,9 tys. & 14,1 tys. \\
+CIC & baseline & $<0{,}1$ & $<0{,}1$ & 13,3 mln & 43,6 mln \\
+CIC & IF & 0,3 & 0,3 & 195 tys. & 219 tys. \\
+CIC & RF & 4,2 & 6,3 & 139 tys. & 135 tys. \\
+CIC & FT & 205 (7 / 4) & 116 (12 / 9) & 13,3 tys. & 14,6 tys. \\
 \midrule
-CIC + GeNIS & baseline & $<0{,}1$ & $<0{,}1$ & 29,6 mln & 41,0 mln \\
-CIC + GeNIS & IF & 0,3 & 0,3 & 178 tys. & 195 tys. \\
-CIC + GeNIS & RF & 12 & 17 & 113 tys. & 122 tys. \\
-CIC + GeNIS & FT & 506 (8 / 5) & 110 (10 / 10) & 11,9 tys. & 13,0 tys. \\
+CIC + GeNIS & baseline & $<0{,}1$ & $<0{,}1$ & 17,3 mln & 55,2 mln \\
+CIC + GeNIS & IF & 0,3 & 0,6 & 193 tys. & 254 tys. \\
+CIC + GeNIS & RF & 12 & 25 & 130 tys. & 137 tys. \\
+CIC + GeNIS & FT & 469 (8 / 5) & 145 (15 / 12) & 13,3 tys. & 13,5 tys. \\
 \bottomrule
 \end{tabular}

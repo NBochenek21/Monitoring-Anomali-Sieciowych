@@ -1,8 +1,9 @@
-"""Rysunki metod (rozdz. 3, 6, 7): oś czasu sesji M1, reguła okna etykiet, izolacja w Isolation Forest,
-krzywa dobowa generatora ruchu i rozkład odstępów między sesjami (realizm). Wykresy wyników (rozdz. 10)
-eksportuje się z dashboardu (przycisk aparatu: PNG w 4-krotnej rozdzielczości). Uruchamiać w Windows (matplotlib + pandas):
+"""Rysunki metod do pracy: oś czasu sesji M1, reguła okna etykiet, Isolation Forest,
+krzywa dobowa i realizm ruchu. Wykresy wyników są eksportowane z dashboardu.
+
+Uruchamianie w Windows (matplotlib, pandas):
     python praca/rysunki/skrypty/metody.py
-Oś czasu potrzebuje danych z dane_os_czasu.py (praca/rysunki/dane/)."""
+"""
 import os
 import sys
 
@@ -15,13 +16,13 @@ from wspolne import DANE, MM, REPO, STATS, SZEROKOSC, liczba, plt, przecinek, za
 KODY = {"port_scan": "A1", "ssh_bruteforce": "A2", "dos_slow": "A3", "http_flood": "A4", "c2_beaconing": "Z1"}
 
 
+#liczba przepływów w przedziałach 10 s (oś logarytmiczna) na tle okien ataków
 def os_czasu(sesja="M1"):
-    """Liczba przepływów w przedziałach 10 s (oś logarytmiczna) na tle okien ataków (rozdz. 6.5)."""
     counts = pd.read_csv(os.path.join(DANE, f"os_czasu_{sesja}.csv"), index_col="bin")
     okna = pd.read_csv(os.path.join(DANE, f"okna_{sesja}.csv"))
     fig, ax = plt.subplots(figsize=(SZEROKOSC, 62 * MM))
     minuty = counts.index / 60
-    # kody ataków nad osią, na przemian w dwóch rzędach, żeby sąsiednie okna się nie nakładały
+    #kody ataków nad osią, na przemian w dwóch rzędach, żeby sąsiednie okna się nie nakładały
     for i, (_, w) in enumerate(okna.sort_values("start_s").iterrows()):
         ax.axvspan(w["start_s"] / 60, w["koniec_s"] / 60, color="0.88", lw=0)
         ax.text((w["start_s"] + w["koniec_s"]) / 120, 1.02 + 0.075 * (i % 2), KODY[w["typ"]], ha="center",
@@ -39,22 +40,22 @@ def os_czasu(sesja="M1"):
     ax.set_yticklabels(["1", "10", "100", "1000"])
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.28), ncol=3, frameon=False,
               handles=ax.get_legend_handles_labels()[0] + [Rectangle((0, 0), 1, 1, color="0.88")],
-              labels=ax.get_legend_handles_labels()[1] + ["okno ataku (A1–A4, Z1)"])
+              labels=ax.get_legend_handles_labels()[1] + ["okno ataku (A1\u2013A4, Z1)"])
     zapisz(fig, "os_czasu")
 
 
+#schemat reguły etykiet: okno [start, koniec], końcówka (koniec, koniec + 2 s]
 def regula_okna():
-    """Schemat reguły etykiet: okno [start, koniec], końcówka (koniec, koniec + 2 s] (rozdz. 7.2)."""
     fig, ax = plt.subplots(figsize=(SZEROKOSC, 66 * MM))
     s, e, g = 2.0, 10.0, 2.0
     ax.add_patch(Rectangle((s, -0.6), e - s, 8.2, color="0.88", lw=0))
     ax.add_patch(Rectangle((e, -0.6), g, 8.2, facecolor="white", edgecolor="0.4", hatch="////", lw=0))
-    # (start, koniec, tekst etykiety, opis); kropka = chwila startu przepływu, która decyduje o etykiecie
+    #(start, koniec, tekst etykiety, opis); kropka = chwila startu przepływu, która decyduje o etykiecie
     przypadki = [
         (0.8, 3.5, "normalny", "start przed oknem"),
-        (3.0, 4.6, "atak", "atakujący → cel, z danymi"),
-        (4.4, 5.2, "atak", "cel → atakujący (np. resztka po RST)"),
-        (6.0, 7.4, "attempted", "TCP bez danych od atakującego"),
+        (3.0, 4.6, "atak", "atakujący \u2192 cel, z danymi"),
+        (4.4, 5.2, "atak", "cel \u2192 atakujący, z danymi od atakującego"),
+        (6.0, 7.4, "attempted", "TCP bez danych od atakującego (poza skanem A1)"),
         (5.0, 6.6, "normalny", "inny cel albo inny host"),
         (10.6, 10.9, "attempted", "końcówka: bez danych, do 2 s po oknie"),
         (11.0, 13.0, "normalny", "z danymi tuż po oknie"),
@@ -82,8 +83,8 @@ def regula_okna():
     zapisz(fig, "regula_okna")
 
 
+#polska odmiana słowa "podział" po liczebniku
 def odmiana(n):
-    """Polska odmiana słowa „podział” po liczebniku."""
     if n == 1:
         return "podział"
     if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
@@ -91,8 +92,8 @@ def odmiana(n):
     return "podziałów"
 
 
+#losowe podziały izolujące punkt normalny i anomalię (idea Isolation Forest)
 def izolacja(seed=7):
-    """Losowe podziały izolujące punkt normalny i anomalię (rozdz. 3.1, idea Isolation Forest)."""
     rng = np.random.default_rng(3)
     dane = rng.normal(0, 1, size=(120, 2))
     normalny = np.array([0.15, -0.1])
@@ -106,7 +107,8 @@ def izolacja(seed=7):
         podzialy = 0
         while len(punkty) > 1 and podzialy < 40:
             cecha = r.integers(2)
-            wart = r.uniform(lo[cecha], hi[cecha])
+            #jak w Isolation Forest: próg losowany między najmniejszą a największą wartością punktów w węźle
+            wart = r.uniform(punkty[:, cecha].min(), punkty[:, cecha].max())
             if cecha == 0:
                 ax.plot([wart, wart], [lo[1], hi[1]], color="black", lw=0.6)
             else:
@@ -127,19 +129,23 @@ def izolacja(seed=7):
     zapisz(fig, "izolacja_if")
 
 
+#mnożnik intensywności sesji użytkowników w ciągu doby i godziny startu nagrań
 def krzywa_dobowa():
-    """Mnożnik intensywności sesji użytkowników w ciągu doby i godziny startu nagrań (rozdz. 6.3)."""
     sys.path.insert(0, os.path.join(REPO, "traffic"))
     import profiles
     krzywa = profiles.daily_curve()
     fig, ax = plt.subplots(figsize=(SZEROKOSC, 52 * MM))
     godziny = np.arange(24)
     ax.bar(godziny, krzywa, width=0.8, color="0.8", edgecolor="black", linewidth=0.5, align="edge")
-    for h, nazwa in [(8, "M0, M1"), (9, "M2"), (10, "M3"), (11, "M4"), (13, "M5"), (14, "M6")]:
+    for h, nazwa in [(8, "M1"), (9, "M2"), (10, "M3"), (11, "M4"), (13, "M5"), (14, "M6")]:
         ax.text(h + 0.4, krzywa[h] + 0.08, nazwa, ha="center", va="bottom", fontsize=7.5, rotation=90)
+    #M0 trwa 3 h od godziny 8, więc obejmuje godziny 8-10: klamra nad słupkami
+    y = max(krzywa) * 1.32
+    ax.plot([8, 8, 11, 11], [y - 0.08, y, y, y - 0.08], color="black", lw=0.6)
+    ax.text(9.5, y + 0.04, "M0", ha="center", va="bottom", fontsize=7.5)
     ax.axhline(1.0, color="black", lw=0.6, linestyle="--")
     ax.set_xlim(0, 24)
-    ax.set_ylim(0, max(krzywa) * 1.35)
+    ax.set_ylim(0, max(krzywa) * 1.5)
     ax.set_xticks(range(0, 25, 2))
     ax.set_xlabel("godzina doby")
     ax.set_ylabel("mnożnik intensywności")
@@ -147,9 +153,9 @@ def krzywa_dobowa():
     zapisz(fig, "krzywa_dobowa")
 
 
+#odstępy między startami sesji użytkowników (znormalizowane) wobec rozkładu wykładniczego
+#i odstępy heartbeatu IoT; wspólne dla obu wariantów (te same nagrania)
 def realizm():
-    """Odstępy między startami sesji użytkowników (znormalizowane) wobec rozkładu wykładniczego
-    i odstępy heartbeatu IoT; wspólne dla obu wariantów (te same nagrania)."""
     gaps = pd.read_csv(os.path.join(STATS, "cic", "traffic_gaps.csv"))
     real = pd.read_csv(os.path.join(STATS, "cic", "traffic_realism.csv")).set_index("traffic")
     fig, axes = plt.subplots(1, 2, figsize=(SZEROKOSC, 55 * MM))

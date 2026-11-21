@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
-"""Dashboard alertów w trybie replay.
+r"""Dashboard alarmów w trybie replay.
 
-Odtwarza nagraną sesję z Mininetu w przyspieszonym tempie: co sekundę "zegar" sesji przesuwa się
-o tyle sekund, ile wynosi tempo, a przepływy, które zdążyły się zacząć, trafiają do modeli.
-Alarm = wynik modelu powyżej progu (predykcje i progi z models/run_experiments.py dla scenariusza S1
-i z models/run_s2.py dla S2; scenariusz wybiera się w pasku bocznym). Alarmy wszystkich modeli trafiają
-do dziennika SQLite (alerts.sqlite w katalogu bieżącego biegu), a "Od nowa" go czyści. Widoki liczą alarmy
-z przepływów w pamięci; baza jest zapisem alarmów (np. do przejrzenia po odtworzeniu).
+Odtwarza nagraną sesję w przyspieszonym tempie: przepływ pojawia się, gdy się skończy, a alarm,
+gdy wynik modelu przekroczy próg (predykcje i progi z run_experiments.py dla S1 i run_s2.py dla S2).
+Zakładki: alerty, oś czasu, hosty, modele i porównanie (wyniki z results/stats/<wariant>/).
+Alarmy zapisują się też do bazy SQLite (alerts.sqlite w katalogu biegu).
 
     /root/venvs/ft/bin/python app/dashboard.py --predictions results/raw/S1_cic_M1 \
         --ground-truth /root/sessions/M1/ground_truth.jsonl
     potem w przeglądarce: http://localhost:8050
-
-Zakładka „Porównanie” czyta wyniki stats/summarize.py z results/stats/<wariant>/.
 """
 import argparse
 import json
 import os
 import sqlite3
 import sys
+from decimal import ROUND_HALF_UP, Decimal
 
 import numpy as np
 import pandas as pd
@@ -27,9 +24,9 @@ from dash import Dash, Input, Output, State, ctx, dash_table, dcc, html, no_upda
 from dash.dash_table.Format import Format, Scheme
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models"))
-import classic_models  # noqa: E402
+import classic_models  #noqa: E402
 
-# kolory panelu (te same co w assets/style.css): jasny motyw, kolor tylko tam, gdzie coś znaczy
+#kolory panelu (te same co w assets/style.css): jasny motyw, kolor tylko tam, gdzie coś znaczy
 BG = "#f4f6f9"
 CARD = "#ffffff"
 RAISED = "#eef1f5"
@@ -42,20 +39,26 @@ NEUTRAL = "#9ca3af"
 RED = "#dc2626"
 GREEN = "#16a34a"
 YELLOW = "#d97706"
-# każdy model ma jeden kolor na wszystkich wykresach; bez czerwieni, żółci i zieleni (mają znaczenie)
+#każdy model ma jeden kolor na wszystkich wykresach; bez czerwieni, żółci i zieleni (mają znaczenie)
 MODEL_COLORS = {"baseline": "#9ca3af", "IF": "#3b6fd6", "RF": "#8b5cf6", "FT": "#1f2937"}
 SANS = "Segoe UI, Arial, sans-serif"
 MONO = "Roboto Mono, Consolas, monospace"
-SERIF = "'Times New Roman', Times, serif"  # czcionka wykresów taka jak tekst pracy (pakiet times)
-# style linii modeli: na wydruku czarno-białym kolory IF i RF są nie do odróżnienia
+SERIF = "'Times New Roman', Times, serif"  #czcionka wykresów taka jak tekst pracy (pakiet times)
+#style linii modeli: na wydruku czarno-białym kolory IF i RF są nie do odróżnienia
 MODEL_DASH = {"baseline": "dot", "IF": "dashdot", "RF": "solid", "FT": "dash"}
-# eksport przyciskiem aparatu: PNG w 4-krotnej rozdzielczości (ok. 2800 px szerokości), do druku w pracy
+#eksport przyciskiem aparatu: PNG w 4-krotnej rozdzielczości (ok. 2800 px szerokości), do druku w pracy
 EXPORT_CONFIG = {"displaylogo": False, "toImageButtonOptions": {"format": "png", "scale": 4}}
 
 
-# liczba z przecinkiem dziesiętnym (polska notacja), dla tekstów składanych w Pythonie
+#liczba z przecinkiem dziesiętnym (polska notacja), dla tekstów składanych w Pythonie
 def pl(text):
     return text.replace(".", ",")
+
+
+#liczba z ustaloną liczbą miejsc, połówka w górę na zapisie dziesiętnym: 0,4545 -> 0,455, a nie 0,454
+#(format Pythona i Plotly zaokrągla zapis binarny, w którym 0,4545 bywa odrobinę mniejsze)
+def fixed(x, places):
+    return str(Decimal(repr(float(x))).quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP))
 
 table_header = {"backgroundColor": HEADER, "color": MUTED, "fontWeight": "600",
                 "border": f"1px solid {MUTED}", "padding": "8px 12px", "textAlign": "left",
@@ -69,21 +72,21 @@ parser.add_argument("--ground-truth", required=True, help="ground_truth.jsonl se
 args = parser.parse_args()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RAW = os.path.join(HERE, "..", "results", "raw")       # predykcje per (scenariusz, wariant, sesja)
+RAW = os.path.join(HERE, "..", "results", "raw")       #predykcje per (scenariusz, wariant, sesja)
 SCENARIO_LABELS = {"S1": "S1 - bez adaptacji", "S2": "S2 - po adaptacji na M0"}
-STATS_ROOT = os.path.join(HERE, "..", "results", "stats")  # wyniki stats/summarize.py per wariant
-SESSIONS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(args.ground_truth)))  # np. /root/sessions
+STATS_ROOT = os.path.join(HERE, "..", "results", "stats")  #wyniki stats/summarize.py per wariant
+SESSIONS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(args.ground_truth)))  #np. /root/sessions
 
 
-# Scenariusze, warianty i sesje z folderów results/raw/<scenariusz>_<wariant>_<sesja> (do przełączników).
-# Sesja bez ground truth w katalogu nagrań (np. stara sesja testowa T_check) nie trafia do listy,
-# bo replay potrzebuje okien ataków.
+#scenariusze, warianty i sesje z folderów results/raw/<scenariusz>_<wariant>_<sesja> (do przełączników).
+#sesja bez ground truth w katalogu nagrań nie trafia do listy,
+#bo replay potrzebuje okien ataków.
 def available_runs():
     scenarios, variants, sessions = [], [], []
     if os.path.isdir(RAW):
         for name in sorted(os.listdir(RAW)):
             if name[:3] in ("S1_", "S2_") and os.path.isdir(os.path.join(RAW, name)):
-                variant, session = name[3:].split("_", 1)  # wariant bez podkreślnika, reszta to sesja (np. M1)
+                variant, session = name[3:].split("_", 1)  #wariant bez podkreślnika, reszta to sesja (np. M1)
                 if not os.path.exists(ground_truth_for(session)):
                     continue
                 for value, pool in ((name[:2], scenarios), (variant, variants), (session, sessions)):
@@ -92,27 +95,26 @@ def available_runs():
     return scenarios, variants, sessions
 
 
-# Napis nad widokami: który bieg jest odtwarzany (scenariusz, na czym uczone modele, sesja testowa).
+#napis nad widokami: który bieg jest odtwarzany (scenariusz, na czym uczone modele, sesja testowa).
 def run_label(scenario, variant, session):
     return (f"Odtwarzany bieg: scenariusz {SCENARIO_LABELS.get(scenario, scenario)} | "
             f"modele uczone na: {variant} | sesja testowa: {session}")
 
 
-# Ground truth sesji z katalogu nagrań (obok sesji podanej w --ground-truth, np. /root/sessions/M2/).
+#ground truth sesji z katalogu nagrań (obok sesji podanej w --ground-truth, np. /root/sessions/M2/).
 def ground_truth_for(session):
     return os.path.join(SESSIONS_DIR, session, "ground_truth.jsonl")
 
 
-# Folder biegu replay w results/raw: <scenariusz>_<wariant>_<sesja>.
+#folder biegu replay w results/raw: <scenariusz>_<wariant>_<sesja>.
 def run_folder(scenario, variant, session):
     return os.path.join(RAW, f"{scenario}_{variant}_{session}")
 
 
-# Dane jednego biegu replay: przepływy z predykcjami, progi, okna ataków i długość sesji.
-# folder i ground_truth podaje tylko pierwszy bieg (z argumentów); przełącznik bierze je z nazw.
-# t = chwila KOŃCA przepływu od początku sesji: wtedy przepływ jest eksportowany i model może dać
-# wynik, więc w replayu przepływ (i alarm) pojawia się dopiero wtedy. t_start = start przepływu,
-# według którego przepływ należy do okna ataku. Starsze predykcje bez kolumny końca: t = start.
+#dane jednego biegu replay: przepływy z predykcjami, progi, okna ataków i długość sesji.
+#folder i ground_truth podaje tylko pierwszy bieg (z argumentów); przełącznik bierze je z nazw.
+#t = koniec przepływu (od początku sesji) - dopiero wtedy model może dać wynik, więc wtedy pokazuję alarm
+#t_start = start przepływu, po nim przepływ należy do okna ataku
 def load_run(scenario, variant, session, folder=None, ground_truth=None):
     folder = folder or run_folder(scenario, variant, session)
     flows = pd.read_parquet(os.path.join(folder, "predictions.parquet"))
@@ -121,7 +123,7 @@ def load_run(scenario, variant, session, folder=None, ground_truth=None):
     with open(ground_truth or ground_truth_for(session)) as file:
         attacks = [json.loads(line) for line in file if line.strip()]
     session_start = flows["bidirectional_first_seen_ms"].min() / 1000
-    flows["t_start"] = flows["bidirectional_first_seen_ms"] / 1000 - session_start  # czas od początku sesji [s]
+    flows["t_start"] = flows["bidirectional_first_seen_ms"] / 1000 - session_start  #czas od początku sesji [s]
     end_column = "bidirectional_last_seen_ms"
     if end_column not in flows:
         end_column = "bidirectional_first_seen_ms"
@@ -130,8 +132,8 @@ def load_run(scenario, variant, session, folder=None, ground_truth=None):
 
 
 SCENARIOS, VARIANTS, SESSIONS = available_runs()
-# początkowy wybór z argumentów: info.json w folderze --predictions, a bez niego nazwa folderu
-# <scenariusz>_<wariant>_<sesja>; dane pierwszego biegu czytam z tego folderu, nie z kopii w results/raw
+#początkowy wybór z argumentów: info.json w folderze --predictions, a bez niego nazwa folderu
+#<scenariusz>_<wariant>_<sesja>; dane pierwszego biegu czytam z tego folderu, nie z kopii w results/raw
 start_folder = os.path.abspath(args.predictions)
 folder_name = os.path.basename(os.path.normpath(start_folder))
 if folder_name[:3] in ("S1_", "S2_") and "_" in folder_name[3:]:
@@ -142,7 +144,7 @@ else:
 info_path = os.path.join(start_folder, "info.json")
 if os.path.exists(info_path):
     with open(info_path) as f:
-        info = {"scenario": info["scenario"]} | json.load(f)  # starsze info.json nie mają pola scenario
+        info = {"scenario": info["scenario"]} | json.load(f)  #info.json bez pola scenario: scenariusz z nazwy folderu
 current_scenario, current_variant, current_session = info["scenario"], info["source"], info["session"]
 for value, pool in ((current_scenario, SCENARIOS), (current_variant, VARIANTS), (current_session, SESSIONS)):
     if value not in pool:
@@ -152,11 +154,9 @@ flows, thresholds, attacks, session_start, session_length = load_run(current_sce
 models = list(thresholds.keys())
 
 
-# Baza alarmów (dziennik SQLite) w folderze bieżącego biegu. Zasada: baza zawiera alarmy z przepływów
-# o t <= bieżący czas suwaka. Uruchomienie i zmiana biegu tworzą plik od nowa (DELETE bez VACUUM
-# zostawiał puste strony i plik rósł do 100 MB) i od razu zapisują alarmy z t <= 0, bo suwak stoi na 0.
-# Widok liczy alarmy z przepływów, baza je tylko zapisuje. Aplikacja zakłada jednego użytkownika
-# i jedną kartę przeglądarki (bieg i baza są wspólne dla całego procesu).
+#baza alarmów (SQLite) w folderze biegu: zawiera alarmy z przepływów do bieżącej chwili suwaka
+#start i zmiana biegu tworzą plik od nowa; widoki liczą alarmy same, baza je tylko zapisuje
+#aplikacja zakłada jednego użytkownika i jedną kartę przeglądarki
 def reset_database(folder):
     global database_path
     database_path = os.path.join(folder, "alerts.sqlite")
@@ -168,7 +168,7 @@ def reset_database(folder):
     save_alerts(float("-inf"), 0)
 
 
-# alarmy wszystkich modeli z przepływów, które pojawiły się (skończyły) w przedziale (start, end]
+#alarmy wszystkich modeli z przepływów, które pojawiły się (skończyły) w przedziale (start, end]
 def save_alerts(start, end):
     new_flows = flows[(flows["t"] > start) & (flows["t"] <= end)]
     rows = []
@@ -184,13 +184,13 @@ def save_alerts(start, end):
 reset_database(start_folder)
 
 
-# przy cofnięciu suwaka: usuwa z bazy alarmy późniejsze niż nowy czas
+#przy cofnięciu suwaka: usuwa z bazy alarmy późniejsze niż nowy czas
 def remove_alerts_after(time):
     with sqlite3.connect(database_path) as database:
         database.execute("DELETE FROM alerts WHERE time_s > ?", (time,))
 
 
-# przepływy do pokazania na wykresach i w tabeli: lista (nazwa serii, przepływy, kolor)
+#przepływy do pokazania na wykresach i w tabeli: lista (nazwa serii, przepływy, kolor)
 def chosen_flows(seen, model, show):
     is_alarm = seen[f"score_{model}"] > thresholds[model]
     is_attack = seen["label"] == 1
@@ -207,24 +207,24 @@ def chosen_flows(seen, model, show):
     return [hits, false_alarms]
 
 
-# opóźnienie detekcji = chwila pierwszego trafionego alarmu (koniec przepływu, czyli moment, w którym
-# model może dać wynik) minus start ataku; przepływ należy do ataku według swojego startu
+#opóźnienie detekcji = chwila pierwszego trafionego alarmu (koniec przepływu, czyli moment, w którym
+#model może dać wynik) minus start ataku; przepływ należy do ataku według swojego startu
 def detection_delays(seen):
     rows = []
     for attack in attacks:
         start = attack["start"] - session_start
         end = attack["end"] - session_start
-        row = {"atak": attack["type"], "start [s]": round(start, 1)}
+        row = {"atak": attack["type"], "start [s]": float(fixed(start, 1))}
         attack_flows = seen[(seen["attack_type"] == attack["type"]) & (seen["t_start"] >= start)
                             & (seen["t_start"] <= end)]
         for name in models:
             hits = attack_flows[attack_flows[f"score_{name}"] > thresholds[name]]
-            row[name] = round(hits["t"].min() - start, 1) if len(hits) else "-"
+            row[name] = float(fixed(hits["t"].min() - start, 1)) if len(hits) else "-"
         rows.append(row)
     return rows
 
 
-# kafelek KPI nad widokami: mały tytuł i duża liczba (kolor = znaczenie, np. czerwony dla alarmów)
+#kafelek KPI nad widokami: mały tytuł i duża liczba (kolor = znaczenie, np. czerwony dla alarmów)
 def card(title, value, color=TEXT):
     return html.Div([
         html.Div(title, className="kpi-title"),
@@ -232,23 +232,23 @@ def card(title, value, color=TEXT):
     ], className="kpi")
 
 
-# element sterowania z podpisem nad nim (np. „Model” + przełącznik modeli)
+#element sterowania z podpisem nad nim (np. "Model" + przełącznik modeli)
 def control(label, element, class_name=""):
     return html.Div([html.Div(label, className="control-label"), element], className=class_name)
 
 
-# Znaczniki suwaka czasu: kilka-kilkanaście podziałek, podpisy mm:ss (zamiast gęstej skali sekund).
+#znaczniki suwaka czasu: kilka-kilkanaście podziałek, podpisy mm:ss (zamiast gęstej skali sekund).
 def slider_marks(length):
     length = int(length)
     step = next(s for s in (600, 300, 120, 60, 30, 10) if length / s <= 12 or s == 10)
     return {second: f"{second // 60}:{second % 60:02d}" for second in range(0, length + 1, step)}
 
 
-# wygląd jak figura w artykule: szeryfowa czcionka, ramka wokół pola (osie odbite), znaczniki do
-# środka, delikatna kropkowana siatka i oprawiona legenda nad wykresem
+#wygląd jak figura w artykule: szeryfowa czcionka, ramka wokół pola (osie odbite), znaczniki do
+#środka, delikatna kropkowana siatka i oprawiona legenda nad wykresem
 def style_figure(fig):
     fig.update_layout(template="plotly_white", paper_bgcolor=CARD, plot_bgcolor=CARD, height=420,
-                      separators=", ",  # przecinek dziesiętny i spacja tysięcy w liczbach Plotly
+                      separators=", ",  #przecinek dziesiętny i spacja tysięcy w liczbach Plotly
                       font=dict(family=SERIF, color=TEXT, size=13),
                       title=dict(x=0, xanchor="left", font=dict(size=13, color=TEXT)),
                       margin=dict(l=62, r=22, t=56, b=50), bargap=0.18,
@@ -263,9 +263,9 @@ def style_figure(fig):
     return fig
 
 
-# Liczby do podpisów, liczone z wyników (po nowym biegu zmieniają się same):
-#   - udział ataków w testach M1-M6 i w S0 (metrics.csv obu scenariuszy),
-#   - dwie najliczniejsze klasy ataków i ich udział wśród przepływów ataków (macierz pomyłek RF, S1).
+#liczby do podpisów, liczone z wyników (po nowym biegu zmieniają się same):
+#  - udział ataków w testach M1-M6 i w S0 (metrics.csv obu scenariuszy),
+#  - dwie najliczniejsze klasy ataków i ich udział wśród przepływów ataków (macierz pomyłek RF, S1).
 def share_notes(variant, confusion):
     tables = []
     for folder in ("S0_S1", "S2"):
@@ -294,15 +294,15 @@ def share_notes(variant, confusion):
     return note, dominant
 
 
-# Porównanie modeli na wszystkich sesjach testowych (pliki z stats/summarize.py), dla danego wariantu.
-# Kolejność jak w rozdziale z wynikami: PB1 (S0 -> S1 -> S2, krzywe ROC, stabilność między sesjami),
-# PB2 (ataki, średni recall po atakach, macierz pomyłek RF, koszt), PB3 (wynik modelu a próg),
-# na końcu realizm ruchu normalnego. Podpisy tylko opisują, co pokazuje rysunek; wnioski są w tekście
-# pracy, bo zależą od wariantu i od biegu. Liczby w podpisach są liczone z wyników.
+#Porównanie modeli na wszystkich sesjach testowych (pliki z stats/summarize.py), dla danego wariantu.
+#kolejność sekcji: PB1 (S0 -> S1 -> S2, krzywe ROC, stabilność między sesjami),
+#PB2 (ataki, średni recall po atakach, macierz pomyłek RF, koszt), PB3 (wynik modelu a próg),
+#na końcu realizm ruchu normalnego. Podpisy tylko opisują, co pokazuje rysunek; wnioski są w tekście
+#pracy, bo zależą od wariantu i od biegu. Liczby w podpisach są liczone z wyników.
 def comparison_page(variant):
     stats_folder = os.path.join(STATS_ROOT, variant)
 
-    # jeden plik CSV ze statystyki albo None, gdy summarize.py jeszcze go nie policzył
+    #jeden plik CSV ze statystyki albo None, gdy summarize.py jeszcze go nie policzył
     def read(name):
         path = os.path.join(stats_folder, f"{name}.csv")
         return pd.read_csv(path) if os.path.exists(path) else None
@@ -316,20 +316,20 @@ def comparison_page(variant):
     attack_share_note, dominant_note = share_notes(variant, confusion)
     if summary is None or by_session is None or attack_recall is None:
         return [html.Div(f"Brak wyników w {stats_folder}: uruchom stats/summarize.py.", className="hint")]
-    model_order = list(MODEL_COLORS)  # baseline, IF, RF, FT
+    model_order = list(MODEL_COLORS)  #baseline, IF, RF, FT
     order = {model: position for position, model in enumerate(model_order)}
     summary = summary.sort_values(["scenario", "model"], key=lambda c: c.map(order) if c.name == "model" else c)
-    scenario_color = {"S1": NEUTRAL, "S2": TEXT}  # S1 jasny, S2 ciemny na wszystkich wykresach
+    scenario_color = {"S1": NEUTRAL, "S2": TEXT}  #S1 jasny, S2 ciemny na wszystkich wykresach
     graph_config = EXPORT_CONFIG
 
-    # tekst do tabeli: „średnia ± połowa przedziału”, sama średnia przy jednej sesji, „-” przy braku
+    #tekst do tabeli: "średnia +/- połowa przedziału", sama średnia przy jednej sesji, "-" przy braku
     def with_ci(row, metric):
         mean, half_width = row[metric], row[f"{metric}_ci95"]
         if pd.isna(mean):
             return "-"
-        return pl(f"{mean:.3f}" if pd.isna(half_width) else f"{mean:.3f} ± {half_width:.3f}")
+        return pl(fixed(mean, 3) if pd.isna(half_width) else f"{fixed(mean, 3)} \u00b1 {fixed(half_width, 3)}")
 
-    # nagłówek sekcji z linią oddzielającą, żeby każda część porównania była wyraźnie osobno
+    #nagłówek sekcji z linią oddzielającą, żeby każda część porównania była wyraźnie osobno
     def heading(title, subtitle=None):
         parts = [html.Div(title, style={"fontSize": "14px", "fontWeight": "600", "color": TEXT})]
         if subtitle:
@@ -337,7 +337,7 @@ def comparison_page(variant):
         return html.Div(parts, style={"marginTop": "28px", "marginBottom": "12px", "paddingTop": "16px",
                                       "borderTop": f"1px solid {BORDER}"})
 
-    # te same kolumny wyśrodkowane w nagłówku i w komórkach, żeby liczba stała pod swoją etykietą
+    #te same kolumny wyśrodkowane w nagłówku i w komórkach, żeby liczba stała pod swoją etykietą
     def centered(columns):
         return [{"if": {"column_id": c}, "textAlign": "center"} for c in columns]
 
@@ -348,7 +348,7 @@ def comparison_page(variant):
                                     style_header_conditional=centered(number_columns),
                                     style_table={"overflowX": "auto"}, **extra)
 
-    # podpis pod figurą w stylu artykułu: "Rys. N. opis"; numery kolejno, bo część sekcji jest opcjonalna
+    #podpis pod figurą w stylu artykułu: "Rys. N. opis"; numery kolejno, bo część sekcji jest opcjonalna
     figure_numbers = {}
 
     def caption(key, text):
@@ -357,18 +357,18 @@ def comparison_page(variant):
                         style={"fontSize": "12px", "color": MUTED, "fontFamily": SERIF, "lineHeight": "1.5",
                                "textAlign": "center", "margin": "8px 10px 4px"})
 
-    # jeden wykres na całą szerokość; layout: ustawienia, które mają wygrać ze wspólnym stylem
-    # (np. inne położenie legendy)
+    #jeden wykres na całą szerokość; layout: ustawienia, które mają wygrać ze wspólnym stylem
+    #(np. inne położenie legendy)
     def graph(figure, height, under=None, **layout):
         parts = [dcc.Graph(figure=style_figure(figure).update_layout(height=height, **layout), config=graph_config)]
         return html.Div(parts + ([under] if under is not None else []))
 
-    # wykresy jeden pod drugim (większe i czytelniejsze niż obok siebie, łatwiej je też skopiować do pracy)
+    #wykresy jeden pod drugim (większe i czytelniejsze niż obok siebie, łatwiej je też skopiować do pracy)
     def stacked(items):
         return html.Div(items, style={"display": "flex", "flexDirection": "column", "gap": "20px"})
 
-    # --- tabela metryk (liczby wyśrodkowane, wiersze S2 wyróżnione tłem) ---
-    # recall, FPR i AUC-ROC nie zależą od udziału ataków w teście; F1 zależy (w M1-M6 ataki to 84-91%)
+    #--- tabela metryk (liczby wyśrodkowane, wiersze S2 wyróżnione tłem) ---
+    #recall, FPR i AUC-ROC nie zależą od udziału ataków w teście; F1 zależy (udział z share_notes)
     metric_display = {"recall": "recall", "FPR": "fpr", "AUC-ROC": "roc_auc", "F1": "f1"}
     metric_display = {label: column for label, column in metric_display.items() if column in summary.columns}
     rows = [{"scenariusz": row["scenario"], "model": row["model"], "sesje": int(row["sessions"]),
@@ -376,15 +376,15 @@ def comparison_page(variant):
             for _, row in summary.iterrows()]
     children = [
         heading("Skuteczność modeli - średnia po sesjach testowych",
-                "Jednostka = jedna sesja. Przy jednej sesji nie ma jeszcze przedziału ufności (±). "
+                "Jednostka = jedna sesja. Przy jednej sesji nie ma jeszcze przedziału ufności (\u00b1). "
                 "S1 = transfer wprost ze zbioru źródłowego, S2 = po adaptacji na sesji M0 (wiersze z tłem). "
-                "Recall, FPR i AUC-ROC nie zależą od udziału ataków w teście; F1 zależy (ataki to 84-91% "
-                "przepływów sesji), więc jest zawyżony i pomocniczy."),
+                "Recall, FPR i AUC-ROC nie zależą od udziału ataków w teście; F1 zależy (" + attack_share_note
+                + "), więc jest zawyżony i pomocniczy."),
         table(rows, ["sesje", *metric_display],
               style_data_conditional=[{"if": {"filter_query": '{scenariusz} = "S2"'}, "backgroundColor": RAISED}]),
     ]
 
-    # --- PB1: S0 (ta sama domena) -> S1 (transfer) -> S2 (po adaptacji), cztery metryki ---
+    #--- PB1: S0 (ta sama domena) -> S1 (transfer) -> S2 (po adaptacji), cztery metryki ---
     s0_names = {"cic_test": "S0 (test CIC)", "genis_test": "S0 (test GeNIS)"}
 
     def metric_bars(column, ylabel, ymax, key, text):
@@ -392,7 +392,7 @@ def comparison_page(variant):
         series = []
         if s0 is not None and column in s0.columns:
             for position, (test, group) in enumerate(s0.groupby("test", sort=False)):
-                # S0: białe słupki z ramką (drugi test S0 z kreskowaniem), żeby różniły się w druku
+                #S0: białe słupki z ramką (drugi test S0 z kreskowaniem), żeby różniły się w druku
                 series.append((s0_names.get(test, f"S0 ({test})"), group.set_index("model")[column],
                                dict(color=CARD, line=dict(color=TEXT, width=1),
                                     pattern=dict(shape="/" if position else "", fgcolor=MUTED, size=5))))
@@ -402,7 +402,7 @@ def comparison_page(variant):
         for name, values, marker in series:
             values = values.reindex(model_order)
             figure.add_bar(x=model_order, y=values, name=name, marker=marker,
-                           text=["" if pd.isna(v) else pl(f"{v:.2f}") for v in values], textposition="outside",
+                           text=["" if pd.isna(v) else pl(fixed(v, 2)) for v in values], textposition="outside",
                            textfont=dict(family=SERIF, size=10),
                            hovertemplate="%{x} " + name + ": %{y:.3f}<extra></extra>")
         figure.update_layout(barmode="group", xaxis_title="model", yaxis_title=ylabel)
@@ -422,7 +422,8 @@ def comparison_page(variant):
                         "do Mininetu i S2 po adaptacji na sesji M0."),
             metric_bars("fpr", "FPR", fpr_max, "fpr",
                         "Odsetek fałszywych alarmów (FPR) na ruchu normalnym w S0, S1 i S2, przy progu "
-                        "wyznaczonym na walidacji (ok. 1% FPR na zbiorze, na którym model był uczony)."),
+                        "wyznaczonym na walidacji (ok. 1% FPR na końcówce zbioru źródłowego w S1 i na końcówce M0 "
+                        "w S2)."),
         ]),
         stacked([
             metric_bars("roc_auc", "AUC-ROC", 1.15, "auc",
@@ -434,7 +435,7 @@ def comparison_page(variant):
         ]),
     ]
 
-    # --- PB1: krzywe ROC z punktem pracy (próg z walidacji) ---
+    #--- PB1: krzywe ROC z punktem pracy (próg z walidacji) ---
     if roc_curves is not None and roc_points is not None:
         children.append(heading("Krzywe ROC i punkt pracy (próg)",
                                 "Linia = krzywa ROC z przepływów wszystkich sesji M1-M6, kropka = punkt pracy przy "
@@ -445,13 +446,14 @@ def comparison_page(variant):
             figure = go.Figure()
             for model in model_order:
                 curve = roc_curves[(roc_curves["scenario"] == scenario) & (roc_curves["model"] == model)]
-                curve = curve[curve["fpr"] >= 1e-4]  # oś logarytmiczna nie pokaże FPR = 0
+                curve = curve[curve["fpr"] >= 1e-4]  #oś logarytmiczna nie pokaże FPR = 0
                 point = roc_points[(roc_points["scenario"] == scenario) & (roc_points["model"] == model)]
                 if curve.empty or point.empty:
                     continue
                 point = point.iloc[0]
-                figure.add_scatter(x=curve["fpr"], y=curve["tpr"], mode="lines", legendgroup=model,
-                                   name=pl(f"{model} (AUC {point['roc_auc']:.3f})"),
+                #krzywa zapisana jako największy TPR przy FPR <= x, więc rysowana schodkowo (line_shape="hv")
+                figure.add_scatter(x=curve["fpr"], y=curve["tpr"], mode="lines", line_shape="hv", legendgroup=model,
+                                   name=pl(f"{model} (AUC {fixed(point['roc_auc'], 3)})"),
                                    line=dict(color=MODEL_COLORS[model], width=2, dash=MODEL_DASH[model]),
                                    hovertemplate=model + ": FPR %{x:.4f}, TPR %{y:.3f}<extra></extra>")
                 figure.add_scatter(x=[max(point["fpr"], 1e-4)], y=[point["tpr"]], mode="markers", legendgroup=model,
@@ -459,21 +461,24 @@ def comparison_page(variant):
                                                                  line=dict(color=CARD, width=1.5)),
                                    hovertemplate=f"{model}, próg: FPR {point['fpr']:.3f}, TPR {point['tpr']:.3f}"
                                                  "<extra></extra>")
+            #docelowy FPR progu (1% na walidacji): odległość kropki w prawo od tej linii to koszt progu
+            figure.add_vline(x=0.01, line=dict(color=MUTED, width=1, dash="dot"))
             figure.update_layout(title=scenario, xaxis_title="FPR (skala logarytmiczna)", yaxis_title="TPR (recall)")
             figure.update_xaxes(type="log", range=[-4, 0], tickvals=[1e-4, 1e-3, 1e-2, 1e-1, 1],
                                 ticktext=["0,0001", "0,001", "0,01", "0,1", "1"])
             figure.update_yaxes(range=[0, 1.03])
-            # legenda w prawym dolnym rogu pola (tam krzywe ROC nie dochodzą), podpisy osi jako zwykłe liczby
+            #legenda w prawym dolnym rogu pola (tam krzywe ROC nie dochodzą), podpisy osi jako zwykłe liczby
             graphs.append(graph(figure, 460,
                                 legend=dict(orientation="v", x=0.98, y=0.04, xanchor="right", yanchor="bottom",
                                             font=dict(size=11), bgcolor=CARD, bordercolor=TEXT, borderwidth=1)))
         children += [stacked(graphs),
                      caption("roc", "Krzywe ROC modeli w scenariuszach S1 (u góry) i S2 (u dołu), z przepływów "
                                     "wszystkich sesji M1-M6; kropka to punkt pracy przy progu z walidacji. "
-                                    "Odległość kropki od krzywej w lewo pokazuje, ile FPR kosztuje próg "
+                                    "Linia kropkowana to FPR = 0,01 (docelowy FPR progu na walidacji); "
+                                    "odległość kropki w prawo od niej pokazuje, ile FPR kosztuje próg "
                                     "przeniesiony z innej sieci.")]
 
-    # --- PB1: FPR w każdej sesji (pudełko = rozrzut między sesjami, punkty = sesje) i S2 wobec S1 ---
+    #--- PB1: FPR w każdej sesji (pudełko = rozrzut między sesjami, punkty = sesje) i S2 wobec S1 ---
     children.append(heading("Stabilność między sesjami (FPR)",
                             "Każdy punkt to jedna sesja testowa; pudełko pokazuje rozrzut, gdy sesji jest więcej."))
     figure = go.Figure()
@@ -488,7 +493,7 @@ def comparison_page(variant):
                  caption("sessions", "Rozkład FPR każdego modelu po sesjach testowych, osobno dla S1 i S2. "
                                      "Punkt = jedna sesja; przy wielu sesjach pudełko pokazuje medianę i rozrzut.")]
     if s2_vs_s1 is not None and len(s2_vs_s1):
-        # remisy (ta sama wartość w S1 i S2); starsze pliki s2_vs_s1.csv nie mają tych kolumn
+        #remisy (ta sama wartość w S1 i S2); kolumn może nie być w pliku s2_vs_s1.csv
         def ties(row, column):
             count = row.get(column)
             return f" (remis: {int(count)})" if count is not None and not pd.isna(count) and count > 0 else ""
@@ -505,7 +510,7 @@ def comparison_page(variant):
                                                                      "margin": "16px 0 8px"}),
                      table(rows, list(rows[0])[1:])]
 
-    # --- PB2: heatmapa recall każdego ataku dla każdego modelu (średnia po sesjach) ---
+    #--- PB2: heatmapa recall każdego ataku dla każdego modelu (średnia po sesjach) ---
     children.append(heading("Wykrywalność poszczególnych ataków (recall) - PB2",
                             "Jaśniej = atak częściej pomijany. Z1 = c2_beaconing to atak niewidziany w treningu."))
     graphs = []
@@ -514,7 +519,9 @@ def comparison_page(variant):
             [m for m in model_order if m in set(group["model"])])
         figure = go.Figure(go.Heatmap(z=recall_table.values, x=list(recall_table.columns), y=list(recall_table.index),
                                       zmin=0, zmax=1, colorscale=[[0, "#f4f6f9"], [1, "#3b6fd6"]],
-                                      texttemplate="%{z:.2f}", textfont=dict(family=SERIF),
+                                      text=[[pl(fixed(v, 2)) if pd.notna(v) else "" for v in row]
+                                            for row in recall_table.values],
+                                      texttemplate="%{text}", textfont=dict(family=SERIF),
                                       hovertemplate="%{y}, %{x}: %{z:.3f}<extra></extra>", xgap=2, ygap=2,
                                       colorbar=dict(thickness=10, outlinecolor=TEXT, outlinewidth=1, title="recall")))
         figure.update_layout(title=scenario, yaxis_autorange="reversed", xaxis_title="atak", yaxis_title="model")
@@ -524,7 +531,7 @@ def comparison_page(variant):
                                     "sesjach, w scenariuszach S1 (u góry) i S2 (u dołu). Z1 = c2_beaconing "
                                     "jest atakiem niewidzianym w treningu.")]
 
-    # --- PB2: średni recall po atakach (każdy atak z tą samą wagą), S1 obok S2, z 95% CI ---
+    #--- PB2: średni recall po atakach (każdy atak z tą samą wagą), S1 obok S2, z 95% CI ---
     if macro is not None and len(macro):
         def macro_bars(column, title):
             figure = go.Figure()
@@ -533,8 +540,8 @@ def comparison_page(variant):
                 figure.add_bar(x=model_order, y=group[column], name=scenario,
                                marker=dict(color=scenario_color[scenario], line=dict(color=TEXT, width=1)),
                                error_y=dict(type="data", array=group[f"{column}_ci95"], color=TEXT, thickness=1),
-                               # wartość w środku słupka, żeby nie nachodziła na kreskę przedziału ufności
-                               text=["" if pd.isna(v) else pl(f"{v:.2f}") for v in group[column]],
+                               #wartość w środku słupka, żeby nie nachodziła na kreskę przedziału ufności
+                               text=["" if pd.isna(v) else pl(fixed(v, 2)) for v in group[column]],
                                textposition="inside", insidetextanchor="middle",
                                textfont=dict(family=SERIF, size=10, color=CARD if scenario == "S2" else TEXT),
                                hovertemplate="%{x} " + scenario + ": %{y:.3f}<extra></extra>")
@@ -552,7 +559,7 @@ def comparison_page(variant):
                                       "ataków (u góry) i czterech znanych (u dołu), S1 obok S2. Pokazuje różnice "
                                       "niewidoczne w recall ogólnym, w którym dominują liczne klasy ataków.")]
 
-    # --- PB2: macierz pomyłek RF 6 × 6 (zsumowana po sesjach), wiersze znormalizowane do 1, i F1 per klasa ---
+    #--- PB2: macierz pomyłek RF 6 x 6 (zsumowana po sesjach), wiersze znormalizowane do 1, i F1 per klasa ---
     rf_matrix = confusion[confusion["model"] == "RF (klasy)"] if confusion is not None else None
     if rf_matrix is not None and len(rf_matrix):
         children.append(heading("Macierz pomyłek Random Forest (6 klas)",
@@ -566,7 +573,9 @@ def comparison_page(variant):
                                        fill_value=0).reindex(index=classes, columns=classes, fill_value=0)
             shares = counts.div(counts.sum(axis=1).where(lambda total: total > 0), axis=0)
             figure = go.Figure(go.Heatmap(z=shares.values, x=classes, y=classes, zmin=0, zmax=1,
-                                          colorscale=[[0, "#f4f6f9"], [1, "#3b6fd6"]], texttemplate="%{z:.2f}",
+                                          colorscale=[[0, "#f4f6f9"], [1, "#3b6fd6"]], texttemplate="%{text}",
+                                          text=[[pl(fixed(v, 2)) if pd.notna(v) else "" for v in row]
+                                                for row in shares.values],
                                           customdata=counts.values, textfont=dict(family=SERIF),
                                           hovertemplate="prawda %{y}, przewidziane %{x}: %{z:.3f} "
                                                         "(%{customdata} przepływów)<extra></extra>",
@@ -575,7 +584,7 @@ def comparison_page(variant):
                                  xaxis_title="klasa przewidziana", yaxis_title="prawdziwa klasa")
             graphs.append(graph(figure, 480))
         children += [stacked(graphs),
-                     caption("rf", "Macierz pomyłek Random Forest (prawdziwa klasa × klasa przewidziana) w "
+                     caption("rf", "Macierz pomyłek Random Forest (prawdziwa klasa \u00d7 klasa przewidziana) w "
                                    "scenariuszach S1 i S2. Tylko RF przewiduje typ ataku; pozostałe modele dają "
                                    "decyzję alarm / brak alarmu, więc ich odpowiednikiem jest recall per atak "
                                    f"(Rys. {figure_numbers['attacks']}) i FPR (Rys. {figure_numbers['fpr']}).")]
@@ -584,7 +593,7 @@ def comparison_page(variant):
             flows = rf_f1.groupby("class")["flows"].first()
             names = classes + ["macro-F1", "macro-F1 (bez c2)"]
             rows = [{"klasa": name, "przepływy": f"{int(flows[name]):,}".replace(",", " ") if name in classes else "",
-                     **{f"F1 {s}": pl(f"{pivot.loc[name, s]:.3f}") for s in pivot.columns}}
+                     **{f"F1 {s}": pl(fixed(pivot.loc[name, s], 3)) for s in pivot.columns}}
                     for name in names if name in pivot.index]
             children += [html.Div("F1 każdej klasy RF (z macierzy wyżej); c2_beaconing ma F1 = 0 z założenia, "
                                   "bo RF nie zna tej klasy, dlatego jest też macro-F1 bez niej",
@@ -593,7 +602,7 @@ def comparison_page(variant):
                                style_data_conditional=[{"if": {"filter_query": '{klasa} contains "macro"'},
                                                         "backgroundColor": RAISED, "fontWeight": "600"}])]
 
-    # --- PB2: koszt (czas treningu i przepustowość), skala logarytmiczna ---
+    #--- PB2: koszt (czas treningu i przepustowość), skala logarytmiczna ---
     if cost is not None and len(cost):
         def cost_bars(column, ylabel, label, floor):
             figure = go.Figure()
@@ -605,9 +614,9 @@ def comparison_page(variant):
                                textfont=dict(family=SERIF, size=10),
                                hovertemplate="%{x} " + scenario + ": %{text}<extra></extra>")
             figure.update_layout(barmode="group", xaxis_title="model", yaxis_title=ylabel)
-            # zakres osi z zapasem nad najwyższym słupkiem, żeby zmieścił się jego podpis
+            #zakres osi z zapasem nad najwyższym słupkiem, żeby zmieścił się jego podpis
             shown = cost[column].clip(lower=floor)
-            figure.update_yaxes(type="log", dtick=1, exponentformat="power",  # tylko pełne potęgi 10
+            figure.update_yaxes(type="log", dtick=1, exponentformat="power",  #tylko pełne potęgi 10
                                 range=[np.log10(shown.min()) - 0.3, np.log10(shown.max()) + 0.6])
             return graph(figure, 380)
 
@@ -618,15 +627,16 @@ def comparison_page(variant):
             return pl(f"{value / 1e6:.1f} mln") if value >= 1e6 else f"{value / 1e3:.0f} tys."
 
         children += [heading("Koszt: czas treningu i przepustowość - PB2",
-                             "Średnio na sesję, laptop bez GPU (i7-1255U). S1 = trening na zbiorze źródłowym, "
-                             "S2 = adaptacja na M0 (FT: dostrajanie wag z S1). Oś w skali logarytmicznej."),
+                             "Czas treningu: jeden pomiar (model uczony raz), przepustowość: średnio na sesję; "
+                             "laptop bez GPU (i7-1255U). S1 = trening na zbiorze źródłowym, S2 = FT dostraja wagi "
+                             "z S1, IF i RF uczą się od nowa na próbce źródła i M0. Oś w skali logarytmicznej."),
                      stacked([cost_bars("train_seconds", "czas treningu [s]", seconds, 0.01),
                              cost_bars("flows_per_second", "przepływy / s", per_second, 1)]),
                      caption("cost", "Czas treningu albo adaptacji (u góry) i przepustowość predykcji w "
                                      "przepływach na sekundę (u dołu), S1 obok S2. Przepustowość baseline'u to "
                                      "tylko porównanie gotowych cech z progami.")]
 
-    # --- PB3: wynik modelu a próg w grupach przepływów (kwantyle z summarize.py) ---
+    #--- PB3: wynik modelu a próg w grupach przepływów (kwantyle z summarize.py) ---
     if quantiles is not None and len(quantiles):
         children.append(heading("Wynik modelu a próg: ruch normalny, IoT, Z1 i znane ataki - PB3",
                                 "Pudełko = kwartyle wyników, wąsy = 5. i 95. percentyl, przerywana linia = próg "
@@ -651,11 +661,11 @@ def comparison_page(variant):
                 threshold = float(rows["threshold"].dropna().iloc[0])
                 line = dict(color=scenario_color[scenario], dash="dash", width=1.5)
                 figure.add_hline(y=max(threshold, 1e-4) if log_scale else threshold, line=line)
-                # podpis progu w legendzie (adnotacje add_hline na osi logarytmicznej trafiają w złe miejsce)
+                #podpis progu w legendzie (adnotacje add_hline na osi logarytmicznej trafiają w złe miejsce)
                 figure.add_scatter(x=[None], y=[None], mode="lines", line=line, name=f"próg {scenario}")
             figure.update_layout(title=model, boxmode="group", xaxis_title="", yaxis_title="wynik modelu")
             if log_scale:
-                figure.update_yaxes(type="log", dtick=1, exponentformat="power")  # tylko pełne potęgi 10
+                figure.update_yaxes(type="log", dtick=1, exponentformat="power")  #tylko pełne potęgi 10
             graphs.append(graph(figure, 420))
         children += [stacked(graphs),
                      caption("scores", "Rozkład wyników każdego modelu w czterech grupach przepływów wobec progu, "
@@ -663,7 +673,7 @@ def comparison_page(variant):
                                        "beaconingu od zwykłego ruchu; pudełko heartbeatu IoT nad progiem to "
                                        "fałszywe alarmy na legalnej regularności.")]
 
-    # --- realizm ruchu normalnego (do rozdziału o środowisku symulacyjnym) ---
+    #--- realizm ruchu normalnego ---
     if gaps is not None and len(gaps):
         def realism_note(prefix):
             if realism is None:
@@ -685,7 +695,7 @@ def comparison_page(variant):
                            line=dict(color=TEXT, width=2))
         figure.update_layout(title="sesje użytkowników" + realism_note("sesje"),
                              xaxis_title="odstęp / średni odstęp hosta", yaxis_title="gęstość")
-        # legenda w prawym górnym rogu pola (tam histogram jest już prawie zerowy), żeby nie zasłaniała tytułu
+        #legenda w prawym górnym rogu pola (tam histogram jest już prawie zerowy), żeby nie zasłaniała tytułu
         user_graph = graph(figure, 380,
                            legend=dict(orientation="v", x=0.98, y=0.96, xanchor="right", yanchor="top",
                                        font=dict(size=11), bgcolor=CARD, bordercolor=TEXT, borderwidth=1))
@@ -707,7 +717,7 @@ def comparison_page(variant):
 
 
 app = Dash(__name__)
-# strona bez ikony w karcie przeglądarki (domyślny szablon Dash dokłada ikonę Plotly)
+#strona bez ikony w karcie przeglądarki (domyślny szablon Dash dokłada ikonę Plotly)
 app.index_string = app.index_string.replace("{%favicon%}", "<link rel=\"icon\" href=\"data:,\">")
 app.title = "Detekcja anomalii - replay"
 
@@ -715,13 +725,13 @@ pages = {"alerts": "Alerty", "timeline": "Oś czasu", "hosts": "Hosty", "models"
          "comparison": "Porównanie"}
 
 
-# kontener jednego widoku (zakładki); switch_page pokazuje jeden, a pozostałe zwija
+#kontener jednego widoku (zakładki); switch_page pokazuje jeden, a pozostałe zwija
 def page(name, children):
     return html.Div(children, id=f"page-{name}", className="panel page-body")
 
 
 app.layout = html.Div([
-    # pasek boczny: nazwa, opis sesji i nawigacja
+    #pasek boczny: nazwa, opis sesji i nawigacja
     html.Aside([
         html.Div([
             html.Div("Monitoring sieci", className="brand"),
@@ -738,10 +748,10 @@ app.layout = html.Div([
     ], className="sidebar"),
 
     html.Main([
-        # sterowanie odtwarzaniem
+        #sterowanie odtwarzaniem
         html.Div([
             control("Model", dcc.RadioItems(models, models[-1], id="model", inline=True, className="segmented")),
-            control("Tempo", dcc.RadioItems([{"label": f"{s}×", "value": s} for s in [1, 5, 10, 30]], 10,
+            control("Tempo", dcc.RadioItems([{"label": f"{s}\u00d7", "value": s} for s in [1, 5, 10, 30]], 10,
                                             id="speed", inline=True, className="segmented")),
             control("Odtwarzanie", html.Div([
                 html.Button("Start", id="play", n_clicks=0, className="button play"),
@@ -756,7 +766,7 @@ app.layout = html.Div([
             ], className="progress-row"), class_name="session-time"),
         ], className="toolbar"),
 
-        # który bieg jest odtwarzany: widoczne na każdej zakładce z alarmami
+        #który bieg jest odtwarzany: widoczne na każdej zakładce z alarmami
         html.Div(run_label(current_scenario, current_variant, current_session), id="run-label",
                  style={"margin": "4px 0 10px", "padding": "8px 12px", "border": f"1px solid {BORDER}",
                         "borderLeft": f"4px solid {TEXT}", "background": CARD, "color": TEXT,
@@ -764,7 +774,7 @@ app.layout = html.Div([
 
         html.Div(id="cards", className="kpi-strip"),
 
-        # tytuł widoku i filtr tego, co pokazują wykresy i tabela
+        #tytuł widoku i filtr tego, co pokazują wykresy i tabela
         html.Div([
             html.H2(id="page-title"),
             html.Div(dcc.RadioItems([
@@ -816,7 +826,7 @@ app.layout = html.Div([
 ], className="app")
 
 
-# nawigacja: widoczny jest jeden widok; filtr "pokaż" nie dotyczy widoków modeli i porównania
+#nawigacja: widoczny jest jeden widok; filtr "pokaż" nie dotyczy widoków modeli i porównania
 @app.callback(Output("page-title", "children"), Output("show-box", "style"),
               [Output(f"page-{name}", "style") for name in pages], Input("page", "value"))
 def switch_page(chosen):
@@ -826,24 +836,24 @@ def switch_page(chosen):
     return [pages[chosen], show_style] + page_styles
 
 
-# zmiana scenariusza (S1/S2), wariantu (na czym uczone) albo sesji testowej: przeładuj dane replay,
-# wyczyść alarmy, ustaw suwak na początek, odśwież napis o biegu i zakładkę „Porównanie”
+#zmiana scenariusza (S1/S2), wariantu (na czym uczone) albo sesji testowej: przeładuj dane replay,
+#wyczyść alarmy, ustaw suwak na początek, odśwież napis o biegu i zakładkę "Porównanie"
 @app.callback(Output("seek", "max"), Output("seek", "marks"),
               Output("seek", "value", allow_duplicate=True), Output("page-comparison", "children"),
               Output("run-label", "children"),
               Input("pick-scenario", "value"), Input("pick-variant", "value"), Input("pick-session", "value"),
               prevent_initial_call=True)
 def switch_run(scenario, variant, session):
-    # takiego biegu nie ma (np. S2 jeszcze nie policzone): zostaje poprzedni, napis mówi dlaczego
+    #takiego biegu nie ma (np. S2 jeszcze nie policzone): zostaje poprzedni, napis mówi dlaczego
     if not os.path.isdir(run_folder(scenario, variant, session)):
         return (no_update, no_update, no_update, no_update,
                 f"Brak predykcji {scenario} dla wariantu {variant} i sesji {session} "
                 f"(results/raw/{scenario}_{variant}_{session}); odtwarzany jest poprzedni bieg.")
-    # global: pozostałe funkcje czytają te zmienne modułu, więc podmiana tutaj działa w całej aplikacji
+    #global: pozostałe funkcje czytają te zmienne modułu, więc podmiana tutaj działa w całej aplikacji
     global flows, thresholds, attacks, session_start, session_length, models
     try:
         loaded = load_run(scenario, variant, session)
-    except (OSError, ValueError, KeyError) as error:  # np. brak ground truth albo uszkodzony plik
+    except (OSError, ValueError, KeyError) as error:  #np. brak ground truth albo uszkodzony plik
         return (no_update, no_update, no_update, no_update,
                 f"Nie da się wczytać biegu {scenario} {variant} {session}: {error}; odtwarzany jest poprzedni bieg.")
     flows, thresholds, attacks, session_start, session_length = loaded
@@ -853,7 +863,7 @@ def switch_run(scenario, variant, session):
             run_label(scenario, variant, session))
 
 
-# Start / Pauza: włącza albo wyłącza zegar (dcc.Interval co 1 s) i podświetla aktywny przycisk
+#Start / Pauza: włącza albo wyłącza zegar (dcc.Interval co 1 s) i podświetla aktywny przycisk
 @app.callback(Output("tick", "disabled"), Output("play", "className"), Output("pause", "className"),
               Input("play", "n_clicks"), Input("pause", "n_clicks"), prevent_initial_call=True)
 def play_or_pause(play_clicks, pause_clicks):
@@ -862,7 +872,7 @@ def play_or_pause(play_clicks, pause_clicks):
     return True, "button play", "button pause active"
 
 
-# suwak "seek" trzyma czas sesji: odtwarzanie i "Od nowa" przesuwają suwak, a użytkownik może go przesunąć sam
+#suwak "seek" trzyma czas sesji: odtwarzanie i "Od nowa" przesuwają suwak, a użytkownik może go przesunąć sam
 @app.callback(Output("seek", "value"),
               Input("tick", "n_intervals"), Input("reset", "n_clicks"),
               State("seek", "value"), State("speed", "value"), prevent_initial_call=True)
@@ -872,8 +882,8 @@ def move_clock(n_intervals, reset_clicks, seek, speed):
     return min(seek + speed, session_length)
 
 
-# po każdej zmianie czasu baza alarmów jest uzupełniana (do przodu) albo przycinana (do tyłu), tak żeby
-# zawierała alarmy z t <= suwak; alarmy z t <= 0 zapisuje już reset_database
+#po każdej zmianie czasu baza alarmów jest uzupełniana (do przodu) albo przycinana (do tyłu), tak żeby
+#zawierała alarmy z t <= suwak; alarmy z t <= 0 zapisuje już reset_database
 @app.callback(Output("clock", "data"), Input("seek", "value"), State("clock", "data"))
 def sync_alerts(seek, clock):
     if seek > clock:
@@ -883,9 +893,9 @@ def sync_alerts(seek, clock):
     return seek
 
 
-# Główny callback: po każdej zmianie czasu, modelu albo filtra przelicza wszystko, co widać, na podstawie
-# przepływów, które skończyły się do bieżącej chwili (seen): kafelki, tabelę alarmów, oś czasu,
-# widok hostów i metryki modeli.
+#główny callback: po każdej zmianie czasu, modelu albo filtra przelicza wszystko, co widać, na podstawie
+#przepływów, które skończyły się do bieżącej chwili (seen): kafelki, tabelę alarmów, oś czasu,
+#widok hostów i metryki modeli.
 @app.callback(Output("cards", "children"), Output("alerts", "data"), Output("timeline", "figure"),
               Output("metrics", "children"), Output("recall-per-attack", "figure"), Output("clock-label", "children"),
               Output("hosts", "figure"), Input("clock", "data"), Input("model", "value"), Input("show", "value"))
@@ -900,24 +910,24 @@ def update(clock, model, show):
     cards = [
         card("Przepływy", f"{len(seen)}"),
         card("Alarmy", f"{len(alerts)}", RED),
-        card("Wykryte ataki", f"{detected}", GREEN),
+        card("Wykryte przepływy ataków", f"{detected}", GREEN),
         card("Fałszywe alarmy", f"{false_alarms}", YELLOW),
-        card("Pominięte ataki", f"{missed}", MUTED),
+        card("Pominięte przepływy ataków", f"{missed}", MUTED),
     ]
 
     chosen = chosen_flows(seen, model, show)
-    # do tabeli tylko 500 najnowszych wierszy (najnowsze na górze), żeby przeglądarka się nie zatykała
+    #do tabeli tylko 500 najnowszych wierszy (najnowsze na górze), żeby przeglądarka się nie zatykała
     newest = pd.concat([part for name, part, color in chosen]).sort_values("t", ascending=False).head(500)
     table = pd.DataFrame({
-        "czas [s]": newest["t"].round(1),
+        "czas [s]": [float(fixed(v, 1)) for v in newest["t"]],
         "źródło": newest["src_ip"],
         "cel": newest["dst_ip"],
         "port": newest["dst_port"],
-        "wynik": newest[f"score_{model}"].round(3),
+        "wynik": [float(fixed(v, 3)) for v in newest[f"score_{model}"]],
         "prawda": newest["attack_type"],
     }).to_dict("records")
 
-    # oś czasu: alarmy w przedziałach 5 s, na tle prawdziwych okien ataków
+    #oś czasu: alarmy w przedziałach 5 s, na tle prawdziwych okien ataków
     timeline = go.Figure()
     for attack in attacks:
         start = attack["start"] - session_start
@@ -934,7 +944,7 @@ def update(clock, model, show):
                            xaxis_range=[0, session_length])
     style_figure(timeline)
 
-    # widok per host: liczba przepływów według hosta źródłowego
+    #widok per host: liczba przepływów według hosta źródłowego
     per_host = pd.DataFrame({name: part["src_ip"].value_counts() for name, part, color in chosen}).fillna(0)
     per_host = per_host.loc[per_host.sum(axis=1).sort_values().index].tail(20)
     hosts = go.Figure()
@@ -944,13 +954,14 @@ def update(clock, model, show):
                         xaxis_title="liczba przepływów", yaxis_type="category")
     style_figure(hosts)
 
-    # metryki wszystkich modeli na tym, co już odtworzono
+    #metryki wszystkich modeli na tym, co już odtworzono
     rows = []
     recall_figure = go.Figure()
     for name in models:
         result = classic_models.evaluate(seen["label"].to_numpy(), seen[f"score_{name}"].to_numpy(), thresholds[name])
-        rows.append({"model": name, "recall": round(result["recall"], 3), "FPR": round(result["fpr"], 3),
-                     "AUC-ROC": round(result["roc_auc"], 3), "wykryte": result["tp"], "fałszywe alarmy": result["fp"]})
+        rows.append({"model": name, "recall": float(fixed(result["recall"], 3)), "FPR": float(fixed(result["fpr"], 3)),
+                     "AUC-ROC": float(fixed(result["roc_auc"], 3)), "wykryte": result["tp"],
+                     "fałszywe alarmy": result["fp"]})
         per_attack = classic_models.recall_per_attack(seen["attack_type"].to_numpy(), seen[f"score_{name}"].to_numpy(),
                                                       thresholds[name])
         recall_figure.add_bar(x=list(per_attack.keys()), y=list(per_attack.values()), name=name,

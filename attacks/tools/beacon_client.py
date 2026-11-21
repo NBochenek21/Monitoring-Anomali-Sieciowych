@@ -28,7 +28,7 @@ def beacon(target, path, data=None):
     conn.close() #zamknięcie 
 
 
-# cały atak Z1: count meldunków w odstępach interval ± jitter, co exfil_every-ty z nich to POST z danymi;
+# cały atak Z1: count meldunków w odstępach interval +/- jitter, co exfil_every-ty z nich to POST z danymi;
 # każdy udany meldunek trafia do logu, a na końcu wypisuje liczbę wysłanych
 def main():
     parser = argparse.ArgumentParser(
@@ -38,7 +38,7 @@ def main():
     parser.add_argument("--count", type=int, default=7, help="liczba check-inów")
     parser.add_argument("--interval", type=float, default=45.0, help="bazowy odstęp [s]")
     parser.add_argument("--jitter", type=float, default=0.2, help="jitter jako ułamek odstępu (0..1)")
-    parser.add_argument("--exfil-every", type=int, default=0, help="co ile beaconów POST „eksfiltracji” (0 = nigdy)")
+    parser.add_argument("--exfil-every", type=int, default=0, help="co ile beaconów POST 'eksfiltracji' (0 = nigdy)")
     parser.add_argument("--exfil-bytes", type=int, default=4096)
     parser.add_argument("--seed", type=int, default=0, help="ziarno jittera (podaje je orkiestrator z ziarna sesji)")
     parser.add_argument("--log", required=True) #wymagane do podania - plik logu do zapisu
@@ -63,7 +63,7 @@ def main():
                 f.flush()
             except Exception as e:  # błąd: logujemy, ale nie zwiększamy beacons_sent (beacon_count pomija "error")
                 f.write(f"{time.time():.3f}\terror\t{e}\n")
-            # odstęp do kolejnego beacona = interval z jitterem (±); po ostatnim już nie śpimy
+            # odstęp do kolejnego beacona = interval z jitterem (+/-); po ostatnim już nie śpimy
             if i < args.count - 1:
                 jitter_factor = 1.0 + random.uniform(-args.jitter, args.jitter)
                 time.sleep(max(0.1, args.interval * jitter_factor))

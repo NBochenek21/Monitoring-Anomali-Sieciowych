@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
-"""Kontrola spójności etykiet: porównuje oetykietowaną tabelę z ground truth.
+"""Kontrola etykiet jednej sesji: porównuje etykiety z ground truth i z logami narzędzi.
 
-Sprawdza cztery rzeczy:
-  1. każdy przepływ z etykietą ataku spełnia regułę (źródło, cel, czas startu w oknie),
-  2. żaden przepływ z etykietą normal jej nie spełnia (brak pominiętych ataków),
-  3. NIEZALEŻNIE (w przybliżeniu, np. kilka żądań HTTP może iść jednym połączeniem):
-     liczba oetykietowanych przepływów danego ataku zgadza się z logiem samego
-     narzędzia (patator: próby, nmap: przeskanowane porty z raportów hostów, flood: żądania,
-     beacon: check-iny, slowhttptest: połączenia z ostatniego raportu stanu). Gdy log nie ma
-     raportu, nmap i slowhttptest wracają do konfiguracji i opis to zaznacza. Punkty 1-2 sprawdzają
-     regułę samą ze sobą; punkt 3 konfrontuje etykiety z niezależnym źródłem - tym, co narzędzie
-     naprawdę zrobiło,
-  4. żaden przepływ TCP z etykietą ataku nie jest dalszym ciągiem starszego połączenia (bez SYN,
-     z danymi), np. połączenia workera wstrzymanego na czas ataku.
+Sprawdza: 1) każdy przepływ ataku spełnia regułę etykiet, 2) żaden przepływ normal jej nie spełnia,
+3) liczba przepływów każdego ataku zgadza się z logiem narzędzia (próby, porty, żądania, check-iny),
+   a narzędzie zakończyło się kodem 0,
+4) żaden przepływ ataku nie jest dalszym ciągiem starszego połączenia (TCP bez SYN, z danymi).
+Kod wyjścia 0 = OK, 1 = błąd (record_all.sh wtedy nie bierze sesji).
 
     python3 features/check_labels.py --labeled labeled.parquet --ground-truth gt.jsonl
 """
@@ -23,13 +16,13 @@ import sys
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "attacks"))
-import tool_logs  # noqa: E402
+import tool_logs  #noqa: E402
 
-from label_flows import (END_GRACE_S, flow_start_seconds, flows_matching_attack,  # noqa: E402
+from label_flows import (END_GRACE_S, flow_start_seconds, flows_matching_attack,  #noqa: E402
                          load_ground_truth, tail_flows)
 
 
-# Liczba portów w specyfikacji nmap, np. '1-1024' albo '22,80,443'.
+#liczba portów w specyfikacji nmap, np. '1-1024' albo '22,80,443'.
 def ports_in_range(ports_spec):
     total = 0
     for part in str(ports_spec).split(","):
@@ -42,8 +35,8 @@ def ports_in_range(ports_spec):
     return total
 
 
-# Niezależny szacunek liczby przepływów ataku z logu narzędzia (konfiguracja tylko awaryjnie).
-# Zwraca (opis, oczekiwana_liczba); oczekiwana_liczba = None, gdy nie da się oszacować.
+#ile przepływów powinien dać atak według logu narzędzia (konfiguracja tylko, gdy logu brak)
+#zwraca (opis, oczekiwana liczba); None = nie da się oszacować (np. brak logu), 0 = narzędzie nic nie zrobiło
 def expected_flows(attack):
     attack_type = attack["type"]
     log = attack.get("tool_log", "")
@@ -73,7 +66,7 @@ def expected_flows(attack):
     return "brak", None
 
 
-# Obie kontrole dla jednej sesji; kod wyjścia 0 = OK, 1 = błąd (record_all.sh zapisuje wynik do logu).
+#cztery kontrole dla jednej sesji; kod wyjścia 0 = OK, 1 = błąd (record_all.sh zapisuje wynik do logu).
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -86,8 +79,8 @@ def main():
     attacks = load_ground_truth(args.ground_truth)
     start_seconds = flow_start_seconds(flows)
 
-    # kontrola 1 i 2: zaznaczam przepływy, które spełniają regułę któregokolwiek ataku,
-    # i porównuję z etykietami zapisanymi w pliku
+    #kontrola 1 i 2: zaznaczam przepływy, które spełniają regułę któregokolwiek ataku,
+    #i porównuję z etykietami zapisanymi w pliku
     any_rule = pd.Series(False, index=flows.index)
     any_tail = pd.Series(False, index=flows.index)
     per_attack = []
@@ -97,7 +90,7 @@ def main():
         any_tail |= tail_flows(flows, attack, start_seconds, END_GRACE_S)
         per_attack.append((attack, int(matches.sum())))
 
-    # końcówki ataków (label_flows.END_GRACE_S) mają label = 1 i klasę attempted, choć leżą tuż za oknem
+    #końcówki ataków (label_flows.END_GRACE_S) mają label = 1 i klasę attempted, choć leżą tuż za oknem
     tail_ok = any_tail & (flows["attack_type"] == "attempted")
     wrong_attack = int(((flows["label"] == 1) & ~any_rule & ~tail_ok).sum())
     missed = int(((flows["label"] == 0) & (any_rule | any_tail)).sum())
@@ -105,10 +98,8 @@ def main():
     print(f"Przepływy z etykietą ataku niespełniające reguły: {wrong_attack}")
     print(f"Przepływy 'normal' spełniające regułę ataku (pominięte): {missed}")
     print(f"Końcówki ataków (do {END_GRACE_S:g} s po oknie, bez danych) jako attempted: {int(tail_ok.sum())}")
-    # kontrola 4: przepływ TCP z etykietą ataku bez SYN, a z danymi, to dalszy ciąg połączenia otwartego
-    # przed oknem - np. połączenia workera wstrzymanego SIGSTOP na czas ataku, które NFStream po 60 s
-    # bezczynności otwiera jako nowy przepływ w oknie. Połączenia narzędzi ataku zaczynają się od SYN,
-    # a resztki po RST nie niosą danych (te są attempted).
+    #kontrola 4: przepływ ataku TCP bez SYN, ale z danymi, to dalszy ciąg starszego połączenia
+    #(np. wstrzymanego workera) - połączenia narzędzi ataku zawsze zaczynają się od SYN
     continued = int(((flows["label"] == 1) & (flows["attack_type"] != "attempted") & (flows["protocol"] == 6)
                      & (flows["bidirectional_syn_packets"] == 0)
                      & (flows["src2dst_payload_bytes"] + flows["dst2src_payload_bytes"] > 0)).sum())
@@ -121,11 +112,20 @@ def main():
     tool_problem = False
     for attack, count in per_attack:
         desc, expected = expected_flows(attack)
-        if not expected:  # None albo 0 -> nie da się oszacować (np. brak logu narzędzia)
+        #narzędzie zakończone kodem różnym od 0 (np. 124 = timeout) - wystąpienie do obejrzenia
+        if attack.get("exit_code", 0) != 0:
+            tool_problem = True
+            print(f"  BŁĄD   {attack['attack_id']:20s} kod wyjścia narzędzia {attack.get('exit_code')}")
+        if expected is None:  #brak logu albo raportu w logu -> nie da się oszacować
             print(f"  ----   {attack['attack_id']:20s} przepływów={count:<5d} {desc} (brak szacunku)")
             continue
-        # kontrola 3: stosunek przepływów do liczby z logu narzędzia; ok. 1 = zgodnie.
-        # 0,5-2 to OK (np. kilka żądań HTTP w jednym połączeniu), poza 0,3-3 albo 0 przepływów to błąd
+        if expected == 0:  #narzędzie nic nie zaraportowało: błąd, gdy są przepływy ataku
+            gross = count > 0
+            tool_problem = tool_problem or gross
+            print(f"  {'BŁĄD ' if gross else 'OK   '}  {attack['attack_id']:20s} przepływów={count:<5d} "
+                  f"oczek.~0  ({desc})")
+            continue
+        #kontrola 3: przepływy / liczba z logu narzędzia; ok. 1 = zgodnie, 0,5-2 OK, poza 0,3-3 błąd
         ratio = count / expected
         gross = count == 0 or ratio < 0.3 or ratio > 3.0
         flag = "BŁĄD " if gross else ("OK   " if 0.5 <= ratio <= 2.0 else "UWAGA")

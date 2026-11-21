@@ -1,21 +1,13 @@
 #!/usr/bin/env python3
-"""Ekstrakcja przepływów NFStreamem: PCAP -> Parquet z cechami (bez etykiet).
+"""Ekstrakcja przepływów NFStreamem: pcap -> tabela przepływów (parquet), bez etykiet.
 
-Jedno narzędzie i jedna konfiguracja dla wszystkich danych (CIC-IDS2017, GeNIS, Mininet), żeby
-cechy były porównywalne między domenami. Kroki dla każdego pliku:
-  1. editcap: konwersja do pcap (także z pcapng) i usunięcie duplikatów pakietów w oknie czasu,
-  2. reordercap: pakiety w kolejności znaczników czasu,
-  3. NFStream z parametrami jak w NFS-2023 (Pekar i Jozsa 2024): idle 60 s, active 120 s,
-     tylko IPv4 TCP/UDP, bez dekodowania tuneli, bez DPI, z analizą statystyczną,
-  4. wtyczka TcpTermination: RST kończy przepływ od razu, a po FIN z obu stron przepływ kończy
-     końcowy ACK. Tak domyka połączenie poprawiony CICFlowMeter (Engelen i in. 2021), bez
-     resztkowych przepływów FIN/ACK po zamknięciu.
-
-Wynik: <out>/<nazwa>.parquet (posortowany po starcie przepływu) i <out>/<nazwa>.meta.json
-z wersjami narzędzi, parametrami i statystyką deduplikacji.
+To samo narzędzie i te same ustawienia dla CIC-IDS2017, GeNIS i Mininetu, żeby cechy były porównywalne.
+Kroki: usunięcie pakietów o identycznych bajtach do 0,5 ms po sobie (editcap; w CIC duplikaty z nagrania,
+w Mininecie powtórzone przez jądro RST) i ułożenie ich po czasie (reordercap), NFStream
+(idle 60 s, active 120 s, tylko IPv4 TCP/UDP, bez DPI) i nasza wtyczka zamykania połączeń TCP.
+Obok wyniku zapisuje .meta.json z wersjami narzędzi i parametrami.
 
     python3 features/extract_flows.py --pcap /root/sessions/M1/capture.pcap --out /root/sessions/M1/flows
-    python3 features/extract_flows.py --pcap <katalog z pcap/pcapng> --out <katalog>
 """
 import argparse
 import glob
@@ -34,14 +26,13 @@ from nfstream import NFPlugin, NFStreamer
 
 TCP = 6
 PCAP_EXT = (".pcap", ".pcapng", ".cap")
-# Parametry jak w NFS-2023 (Pekar i Jozsa 2024, Computer Networks), takie same dla
-# wszystkich danych; bez DPI (wynik L7 zależy od wersji nDPI).
+#parametry takie same dla wszystkich danych; bez DPI (wynik L7 zależy od wersji nDPI).
 IDLE_TIMEOUT = 60
 ACTIVE_TIMEOUT = 120
 BPF_FILTER = "ip and (tcp or udp)"
-# Okno deduplikacji pakietów editcap -w [s], jak w CRiSIS-2022 (Lanvin i in.).
+#okno deduplikacji pakietów editcap -w [s].
 DEDUP_WINDOW = 0.0005
-# Kolumny bez wartości dla modelu, zdradzające środowisko (MAC, OUI) albo puste bez DPI (L7).
+#kolumny bez wartości dla modelu, zdradzające środowisko (MAC, OUI) albo puste bez DPI (L7).
 DROP_COLUMNS = ["src_mac", "src_oui", "dst_mac", "dst_oui", "vlan_id", "tunnel_id", "ip_version",
                 "udps.tcp_fin_mask",
                 "application_name", "application_category_name", "application_is_guessed",
@@ -49,24 +40,22 @@ DROP_COLUMNS = ["src_mac", "src_oui", "dst_mac", "dst_oui", "vlan_id", "tunnel_i
                 "server_fingerprint", "user_agent", "content_type"]
 
 
-# Kończy przepływ TCP po zakończeniu połączenia: po RST albo po FIN z obu stron i końcowym ACK.
-#
-# NFStream wywołuje on_init dla pierwszego pakietu przepływu i on_update dla kolejnych; pakiet
-# jest już wliczony, a expiration_id = -1 zamyka przepływ po nim. Następny pakiet z tą samą
-# piątką otwiera nowy przepływ.
+#wtyczka NFStream: zamyka przepływ TCP, gdy połączenie się skończy - po RST albo po FIN z obu stron
+#i ostatnim ACK; bez niej kolejne połączenie z tymi samymi adresami i portami dokleiłoby się do starego
+#on_init = pierwszy pakiet przepływu, on_update = każdy następny; expiration_id = -1 zamyka przepływ
 class TcpTermination(NFPlugin):
 
-    # pierwszy pakiet przepływu: zerujemy maskę FIN i sprawdzamy pakiet jak każdy kolejny
+    #pierwszy pakiet przepływu: zerujemy maskę FIN i sprawdzamy pakiet jak każdy kolejny
     def on_init(self, packet, flow):
-        flow.udps.tcp_fin_mask = 0  # bit 0: FIN od źródła, bit 1: FIN od celu
+        flow.udps.tcp_fin_mask = 0  #bit 0: FIN od źródła, bit 1: FIN od celu
         self._step(packet, flow)
 
-    # każdy kolejny pakiet tego przepływu
+    #każdy kolejny pakiet tego przepływu
     def on_update(self, packet, flow):
         self._step(packet, flow)
 
-    # decyzja dla jednego pakietu TCP: RST kończy od razu, FIN zapamiętujemy w masce
-    # (direction 0 = od źródła, 1 = od celu), a zwykły ACK bez danych po FIN z obu stron domyka połączenie
+    #jeden pakiet TCP: RST kończy przepływ od razu, FIN zapisuję w masce (0 = od źródła, 1 = od celu),
+    #a pusty ACK po FIN z obu stron domyka połączenie
     def _step(self, packet, flow):
         if packet.protocol != TCP:
             return
@@ -77,22 +66,20 @@ class TcpTermination(NFPlugin):
             flow.udps.tcp_fin_mask |= 1 << packet.direction
             return
         if flow.udps.tcp_fin_mask == 3 and packet.ack and packet.payload_size == 0:
-            flow.expiration_id = -1  # końcowy ACK po FIN z obu stron
+            flow.expiration_id = -1  #końcowy ACK po FIN z obu stron
 
 
-# Liczy bajty danych (bez nagłówków) w każdym kierunku przepływu.
-#
-# Nie jest cechą modelu. Służy do etykiety „attempted”: połączenie ataku, w którym atakujący
-# nie wysłał żadnych danych, np. odrzucone przez przeciążony serwer (Engelen i in. 2021; Liu i in. 2022).
+#wtyczka NFStream: bajty danych (bez nagłówków) w każdym kierunku przepływu
+#to nie jest cecha modelu - służy tylko do klasy "attempted" (atak, w którym atakujący nie wysłał danych)
 class PayloadBytes(NFPlugin):
 
-    # pierwszy pakiet: liczniki od zera, potem liczymy go jak każdy następny
+    #pierwszy pakiet: liczniki od zera, potem liczymy go jak każdy następny
     def on_init(self, packet, flow):
         flow.udps.src2dst_payload_bytes = 0
         flow.udps.dst2src_payload_bytes = 0
         self.on_update(packet, flow)
 
-    # dodaje rozmiar danych pakietu do licznika jego kierunku
+    #dodaje rozmiar danych pakietu do licznika jego kierunku
     def on_update(self, packet, flow):
         if packet.direction == 0:
             flow.udps.src2dst_payload_bytes += packet.payload_size
@@ -100,7 +87,7 @@ class PayloadBytes(NFPlugin):
             flow.udps.dst2src_payload_bytes += packet.payload_size
 
 
-# Pierwsza linia z wersją (editcap ma -V, reordercap tylko -h).
+#pierwsza linia z wersją (editcap ma -V, reordercap tylko -h).
 def tool_version(cmd):
     for flag in ("-V", "-h"):
         try:
@@ -113,7 +100,7 @@ def tool_version(cmd):
     return "?"
 
 
-# editcap (pcap + deduplikacja) i reordercap. Zwraca (ścieżka, statystyka).
+#editcap (pcap + deduplikacja) i reordercap. Zwraca (ścieżka, statystyka).
 def prepare(src, tmpdir):
     deduped = os.path.join(tmpdir, "dedup.pcap")
     cmd = ["editcap", "-F", "pcap", "-w", str(DEDUP_WINDOW)]
@@ -121,7 +108,9 @@ def prepare(src, tmpdir):
     if res.returncode != 0:
         sys.exit(f"editcap: {res.stderr.strip()}")
     stats = {"editcap": " ".join(res.stderr.split())[:300]}
-    # editcap pisze na stderr np. „1000 packets seen, 3 packets skipped” - skipped to usunięte duplikaty
+    #editcap pisze na stderr np. "1000 packets seen, 3 packets skipped" - skipped to usunięte pakiety
+    #o identycznych bajtach; w Mininecie (-Q in, bez kopii w nagraniu) to powtórzone przez jądro RST
+    #(w M1 z 13.11 wszystkie 756 to RST atk -> web:80; w sesjach z 20-21.11: 416-581 na sesję)
     m = re.search(r"(\d+) packets? seen, (\d+) packets? skipped", res.stderr)
     if m:
         stats["packets_seen"], stats["duplicates_removed"] = int(m.group(1)), int(m.group(2))
@@ -134,11 +123,9 @@ def prepare(src, tmpdir):
     return ordered, stats
 
 
-# Właściwa ekstrakcja: NFStream czyta przygotowany pcap i zwraca tabelę przepływów (jeden wiersz = jeden
-# przepływ, ok. 70 kolumn statystyk). n_dissections=0 wyłącza DPI, statistical_analysis=True dokłada
-# statystyki rozmiarów pakietów, odstępów i flag; udps to nasze dwie wtyczki z góry pliku.
-# tcp_plugin podmienia regułę zamykania TCP tylko w teście (test_extract_flows.py porównuje warianty);
-# None = bez wtyczki, czyli same timeouty NFStreama.
+#właściwa ekstrakcja: NFStream czyta pcap i zwraca tabelę - jeden wiersz to jeden przepływ, ok. 70 statystyk
+#bez DPI (n_dissections=0), ze statystykami rozmiarów, odstępów i flag, z naszymi dwiema wtyczkami
+#tcp_plugin zmienia się tylko w teście (None = bez wtyczki, same timeouty)
 def extract(pcap, tcp_plugin="default"):
     if tcp_plugin == "default":
         tcp_plugin = TcpTermination()
@@ -147,26 +134,25 @@ def extract(pcap, tcp_plugin="default"):
                           idle_timeout=IDLE_TIMEOUT, active_timeout=ACTIVE_TIMEOUT,
                           n_dissections=0, statistical_analysis=True, udps=plugins)
     df = streamer.to_pandas()
-    if df is None:  # NFStream zwraca None, gdy nie powstał żaden przepływ
+    if df is None:  #NFStream zwraca None, gdy nie powstał żaden przepływ
         return pd.DataFrame()
     df = df.drop(columns=[c for c in DROP_COLUMNS if c in df.columns])
-    # kolumny z wtyczek mają przedrostek udps. - zostawiamy krótkie nazwy
+    #kolumny z wtyczek mają przedrostek udps. - zostawiamy krótkie nazwy
     df = df.rename(columns={"udps.src2dst_payload_bytes": "src2dst_payload_bytes",
                             "udps.dst2src_payload_bytes": "dst2src_payload_bytes"})
-    # Kolejność chronologiczna jest potrzebna FlowTransformerowi (okna z kolejnych wierszy).
-    # id NFStreama jako drugi klucz: przy tym samym czasie startu kolejność zostaje stała
+    #sortowanie po starcie przepływu; id NFStreama jako drugi klucz, żeby przy tym samym czasie startu
+    #kolejność była zawsze ta sama
     df = df.sort_values(["bidirectional_first_seen_ms", "id"], kind="stable").reset_index(drop=True)
-    df["id"] = range(len(df))  # nowe id = pozycja po sortowaniu
+    df["id"] = range(len(df))  #nowe id = pozycja po sortowaniu
     return df
 
 
-# numery typów łącza z nagłówka pcap -> czytelne nazwy (do ostrzeżenia, gdy wyjdzie 0 przepływów)
+#numery typów łącza z nagłówka pcap -> czytelne nazwy (do ostrzeżenia, gdy wyjdzie 0 przepływów)
 LINKTYPE_NAMES = {1: "Ethernet", 113: "Linux cooked v1 (SLL)", 276: "Linux cooked v2 (SLL2)", 101: "raw IP"}
 
 
-# Typ łącza z nagłówka pliku pcap (po editcap zawsze klasyczny pcap).
-# Nagłówek ma 24 bajty; pierwsze 4 to „magiczna liczba”, z której widać kolejność bajtów
-# (little albo big endian), a bajty 20-23 to typ łącza (górne bity to flagi, więc maska).
+#typ łącza z nagłówka pliku pcap (np. Ethernet, SLL)
+#nagłówek ma 24 bajty: pierwsze 4 mówią o kolejności bajtów, a bajty 20-23 to typ łącza
 def linktype(pcap):
     with open(pcap, "rb") as f:
         hdr = f.read(24)
@@ -176,9 +162,8 @@ def linktype(pcap):
     return struct.unpack(order + "I", hdr[20:24])[0] & 0x0FFFFFFF
 
 
-# Lista plików do przetworzenia: wszystkie pcap/pcapng/cap z katalogu (także z podkatalogów)
-# albo jeden podany plik. Wynik nazywa się samą nazwą pliku, więc dwa pliki o tej samej nazwie
-# w różnych podkatalogach nadpisałyby się po cichu - wtedy program kończy się błędem.
+#lista plików: wszystkie pcap z katalogu (z podkatalogami) albo jeden podany plik
+#dwa pliki o tej samej nazwie w różnych podkatalogach nadpisałyby wynik, więc wtedy błąd
 def find_pcaps(path):
     if os.path.isdir(path):
         all_files = glob.glob(os.path.join(path, "**", "*"), recursive=True)
@@ -191,9 +176,8 @@ def find_pcaps(path):
     return [path]
 
 
-# Dla każdego pliku: przygotowanie (deduplikacja, kolejność) w katalogu tymczasowym, ekstrakcja,
-# zapis <nazwa>.parquet i <nazwa>.meta.json (wersje narzędzi, parametry, liczba duplikatów,
-# sposoby zakończenia przepływów), żeby każdy wynik dało się później odtworzyć i sprawdzić.
+#dla każdego pliku: usunięcie duplikatów i ułożenie pakietów, ekstrakcja, zapis .parquet
+#oraz .meta.json z wersjami narzędzi i parametrami, żeby wynik dało się odtworzyć
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -224,11 +208,10 @@ def main():
                 print(f"UWAGA {os.path.basename(f)}: 0 przepływów, typ łącza: {stats['linktype']}. "
                       "NFStream czyta Ethernet, SLL v1 i raw IP; SLL2 nie (nagrywaj z -y LINUX_SLL).")
         finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)  # pliki pośrednie usuwamy także po błędzie
+            shutil.rmtree(tmpdir, ignore_errors=True)  #pliki pośrednie usuwamy także po błędzie
         out = os.path.join(args.out, f"{name}.parquet")
         df.to_parquet(out, index=False)
-        # expiration_id mówi, jak przepływ się skończył (-1 = nasza wtyczka FIN/RST, 0 = idle, 1 = active);
-        # liczności trafiają do meta.json jako kontrola, czy wtyczka działa
+        #jak skończyły się przepływy (-1 = nasza wtyczka, 0 = bezczynność, 1 = za długi) - kontrola wtyczki
         exp = df["expiration_id"].value_counts().items() if not df.empty else []
         meta = {"source": os.path.abspath(f), "source_bytes": os.path.getsize(f), "flows": len(df),
                 "expiration_id_counts": {str(k): int(v) for k, v in exp},

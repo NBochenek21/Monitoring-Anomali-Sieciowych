@@ -1,36 +1,27 @@
 #!/usr/bin/env python3
-"""Prosty baseline progowy, bez uczenia maszynowego.
+"""Baseline: proste progi na cechach kontekstu hosta, bez uczenia maszynowego.
 
-Punkt odniesienia dla modeli ML (Arp i in., USENIX Security 2022): jeśli model nie wygrywa
-z kilkoma progami, to jego wynik niewiele znaczy. Baseline patrzy tylko na cechy kontekstu hosta
-(features/window_features.py):
-  - dużo przepływów w 60 s          (flood, wolny DoS),
-  - dużo różnych celów albo portów   (skan portów),
-  - bardzo regularne połączenia do jednego celu (beaconing C2).
-
-Progi biorę z ruchu normalnego zbioru treningowego: wartość, której normalny ruch przekracza
-tylko w 1% przypadków (dla regularności odwrotnie: 1% najbardziej regularnego ruchu normalnego).
-
-Regularność ocenia tylko przepływy z oceną 0 < CV < 1. CV = 1 to „za mało przepływów do celu”,
-a CV = 0 to przepływy w tej samej milisekundzie (wybuch, nie okresowość: 0,8% ruchu normalnego CIC).
-Wcześniej CV = 0 wchodziło do percentyla, więc próg spadał do podłogi 0,001 i w S1 reguła
-z konstrukcji nie mogła dać alarmu (największy możliwy wynik 1,0).
-Wynik przepływu = największy stosunek „cecha / próg”, więc wynik > 1 znaczy, że któraś reguła
-się przekroczyła. Dzięki temu baseline ma wynik liczbowy jak inne modele (próg przy ok. 1% FPR).
+Punkt odniesienia dla modeli ML. Alarm, gdy host ma w 60 s dużo przepływów (flood, wolny DoS),
+dużo celów albo portów (skan) albo bardzo regularne połączenia do jednego celu (beacon).
+Progi z ruchu normalnego treningu (99. percentyl, dla regularności 1.). Wynik = największy stosunek
+cecha / próg (> 1, gdy któraś cecha przekracza swój próg); próg alarmu na tym wyniku jest wybierany
+jak dla innych modeli, na walidacji przy 1% FPR.
 """
 import numpy as np
 
 NORMAL_QUANTILE = 0.99
 HIGH_IS_SUSPICIOUS = ["host_flows_60s", "host_destinations_60s", "host_ports_60s"]
-MIN_GAP_CV = 1e-3  # dolna granica progu regularności (gdyby ruch normalny był prawie idealnie regularny)
+MIN_GAP_CV = 1e-3  #dolna granica progu regularności (gdyby ruch normalny był prawie idealnie regularny)
 
 
-# Przepływy, dla których regularność ma sens: 0 < CV < 1 (CV = 0 to wybuch, CV = 1 brak oceny).
+#przepływy, dla których regularność ma sens: 0 < CV < 1 (CV = 1 to brak oceny; CV = 0 to wybuch,
+#ale też idealnie równe odstępy - taki przepływ dostaje wynik 0; w sprawdzonych
+#nagraniach z 13.11, M0-M3, nie wystąpił).
 def assessed(cv):
     return (cv > 0) & (cv < 1)
 
 
-# Progi z ruchu normalnego zbioru treningowego (potrzebne kolumny: cechy kontekstu i label).
+#progi z ruchu normalnego zbioru treningowego (potrzebne kolumny: cechy kontekstu i label).
 def fit_baseline(training_flows):
     normal = training_flows[training_flows["label"] == 0]
     limits = {}
@@ -42,7 +33,7 @@ def fit_baseline(training_flows):
     return limits
 
 
-# Wynik = największy stosunek cechy do progu (dla regularności: próg / cecha, tylko dla 0 < CV < 1).
+#wynik = największy stosunek cechy do progu (dla regularności: próg / cecha, tylko dla 0 < CV < 1).
 def baseline_scores(flows, limits):
     scores = np.zeros(len(flows))
     for name in HIGH_IS_SUSPICIOUS:

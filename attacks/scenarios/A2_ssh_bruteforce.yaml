@@ -10,4 +10,4 @@ params:
   user: labuser
   wordlist: wordlists/ssh_passwords.txt   # względem katalogu attacks/
   threads: 4                 # mała współbieżność, żeby nie przeciążyć sshd
-  rate_limit_s: 0.3          # odstęp między próbami
+  rate_limit_s: 0.3          # przerwa przed każdą próbą w każdym wątku (4 wątki: ok. 13 prób/s)

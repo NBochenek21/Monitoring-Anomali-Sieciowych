@@ -1,0 +1,21 @@
+% plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
+% wariant CIC: recall przy FPR najwyżej 1% (próg dobrany w każdej sesji na jej
+% ruchu normalnym, więc ocena uporządkowania wyników, a nie punkt pracy), średnia po sesjach M1-M6
+% (recall_at_fpr1.csv); FPR (rzecz.): średni FPR przy tym progu, niższy od 1% przy remisach wyników
+\begin{tabular}{llccccccc}
+\toprule
+Model & Scen. & \begin{tabular}[b]{@{}c@{}}FPR \\ {}(rzecz.)\end{tabular} & \begin{tabular}[b]{@{}c@{}}Wszystkie \\ {}ataki\end{tabular} & \begin{tabular}[b]{@{}c@{}}A1 \\ {}skan portów\end{tabular} & \begin{tabular}[b]{@{}c@{}}A2 \\ {}brute-force \\ {}SSH\end{tabular} & \begin{tabular}[b]{@{}c@{}}A3 \\ {}wolny DoS\end{tabular} & \begin{tabular}[b]{@{}c@{}}A4 \\ {}HTTP flood\end{tabular} & \begin{tabular}[b]{@{}c@{}}Z1 \\ {}beaconing C2\end{tabular} \\
+\midrule
+baseline & S1 & 0,007 & 0,64 & 0,66 & 0,00 & 0,29 & 0,62 & 0,00 \\
+baseline & S2 & 0,006 & 0,66 & 0,67 & 0,10 & 0,57 & 0,66 & 0,00 \\
+\midrule
+IF & S1 & 0,010 & 0,00 & 0,00 & 0,00 & 0,00 & 0,00 & 0,00 \\
+IF & S2 & 0,010 & 0,71 & 1,00 & 0,00 & 0,99 & 0,00 & 0,00 \\
+\midrule
+RF & S1 & 0,010 & 0,96 & 1,00 & 0,00 & 0,99 & 0,83 & 0,00 \\
+RF & S2 & 0,008 & 1,00 & 1,00 & 1,00 & 1,00 & 1,00 & 0,78 \\
+\midrule
+FT & S1 & 0,010 & 0,70 & 1,00 & 0,63 & 0,50 & 0,00 & 0,00 \\
+FT & S2 & 0,010 & 1,00 & 1,00 & 0,80 & 1,00 & 1,00 & 0,00 \\
+\bottomrule
+\end{tabular}

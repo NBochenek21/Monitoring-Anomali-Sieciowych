@@ -28,7 +28,7 @@ def make_handler(log_path, upload_dir):
 
     # obsługa jednego żądania HTTP: serwer tworzy nowy obiekt tej klasy dla każdego połączenia
     class Handler(http.server.BaseHTTPRequestHandler):
-        server_version = "lab-telemetry/1.0" #tekst który serwer wysyła w nagłowku Server: w odpowiedzi HTTP
+        server_version = "lab-telemetry/1.0" #początek nagłówka Server: w odpowiedzi (http.server dokleja wersję Pythona)
 
         #zapisuje informacje o żądaniu do pliku logu - czas, adres bota, rodzaj żądania (checkin/upload)
         #ścieżka i liczba bajtów

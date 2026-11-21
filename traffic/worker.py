@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Generator ruchu normalnego dla jednego hosta (uruchamiany w jego przestrzeni nazw).
+"""Ruch normalny jednego hosta: działa w jego przestrzeni nazw przez całą sesję.
 
-Pętla: wylosuj typ sesji wg wag grupy, wykonaj sesję (sekwencja akcji z mikro-opóźnieniami),
-odczekaj wykładniczy odstęp między sesjami (w czasie rzeczywistym). IoT ma zamiast
-tego heartbeat o stałym odstępie. Każdą akcję loguję do pliku JSONL (do debugowania; etykietą
-ruchu normalnego i tak jest "brak ataku w oknie czasowym", nie ten log).
-
-Wywoływany przez generator.py przez host.popen; parametry w pliku JSON (--job).
+W pętli losuje typ sesji i wykonuje ją; następna startuje po losowym (wykładniczym) odstępie od startu poprzedniej.
+IoT zamiast sesji wysyła heartbeat co 60 s. Każda akcja trafia do logu traffic_<host>.jsonl.
+Etykiety nie biorą się z tego logu, tylko z ground truth ataków.
 """
+
 import argparse
 import json
 import os
@@ -22,15 +20,17 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))) #worker czyta ustawienia z profiles
 import profiles  #profile zachowania hostów
 
-JOB = {} #zadanie dla hosta z pliku JSON
+JOB = {} #zadanie z pliku JSON (adresy serwerów, ziarno, czas sesji)
 LOG = None #otwarty plik logu
-LOG_LOCK = threading.Lock()  # log piszą dwa wątki (sesje + tło) - blokada aby linie sie nie przeplataly
+LOG_LOCK = threading.Lock() #blokada logu, bo piszą do niego dwa wątki (sesje i tło)
 
 #dopisuje do traffic_<host>.jsonl: czas, host, akcja, parametry akcji (np. docelowy host, liczba bajtów)
 # **kw pozwala dorzucić dowolne pola np. names przy DNS
 def log(action, **kw):
     record = {"t": round(time.time(), 3), "host": JOB["host"], "action": action, **kw}
     with LOG_LOCK:
+        if LOG.closed:  #wątek tła może pisać już po zamknięciu logu na końcu main
+            return
         LOG.write(json.dumps(record) + "\n")
         LOG.flush() # zapisuje od razu do pliku - nawet przy zabitym procesie log jest kompletny
 
@@ -44,10 +44,8 @@ def run(cmd, timeout):
     except subprocess.TimeoutExpired:
         pass
 
-# Śpi do chwili `until` (czas zegarowy) w krótkich kawałkach. Gdy run_session.py wstrzyma workera
-# (SIGSTOP na czas ataku), jądro po SIGCONT dosypia resztę przerwanego snu, więc zwykły time.sleep
-# doliczyłby czas wstrzymania do odstępu. Kawałki po 1 s sprawiają, że po wznowieniu worker
-# sprawdza zegar najpóźniej po sekundzie i rusza od razu, jeśli zaplanowana chwila już minęła.
+#śpi do podanej chwili w kawałkach po 1 s - po zamrożeniu na czas ataku (SIGSTOP)
+#worker wraca do pracy najpóźniej sekundę po odmrożeniu a nie dosypia przerwanego snu
 SLEEP_STEP_S = 1.0
 
 
@@ -59,13 +57,11 @@ def sleep_until(until):
         time.sleep(min(left, SLEEP_STEP_S))
 
 
-# pauza "namysłu użytkownika" między akcjami w jednej sesji - losowa z rozkładu wykładniczego ze średnią 0,4 s
+#krótka przerwa między akcjami w sesji, losowa, średnio 0,4 s
 def think(rng):
     sleep_until(time.time() + rng.expovariate(1.0 / profiles.THINK_TIME_MEAN_S))
 
-#Sesja z grup biuro, deweloper i drukarka (wagi w profiles.GROUPS)
-#w 30% przypadków serwer zewnętrzny, 70% wewnetrzny - najpierw strona główna, potem 1-5 plików
-#wybranych według popularności Zipf - każde curl to osobne połączenie TCP na port 80
+# sesja WWW: 70% serwer firmowy, 30% "internet"; strona główna i 1-5 plików wybranych wg Zipfa
 def session_web_browse(rng):
     targets = JOB["targets"]
     base = targets["xweb"] if rng.random() < 0.3 else targets["web"]
@@ -81,9 +77,7 @@ def session_web_browse(rng):
         run(["curl", "-s", "-o", "/dev/null", "--max-time", "20", f"http://{base}/{fname}"], 22)
     return "web_browse", {"target": base}
 
-#Sesja z grup biuro, deweloper, admin i drukarka (wagi w profiles.GROUPS)
-# 1-3 różne nazwy (losuje bez powtórzeń) spośród 4 wewnetrznych i 3 zewnętrznych
-# każde dig to zapytanie UDP na port 53 do serwera DNS - jedna próba - czekaj najwyżej 2s
+# sesja DNS: 1-3 różne nazwy (firmowe albo "internetowe") przez dig do firmowego DNS
 def session_dns_lookup(rng):
     targets = JOB["targets"]
     available_names = profiles.DNS_NAMES_INTERNAL + profiles.DNS_NAMES_EXTERNAL
@@ -137,13 +131,15 @@ def session_file_transfer(rng):
     fname = rng.choice(profiles.web_file_names())   # losowy plik = losowy rozmiar transferu
     dest = f"/tmp/lab/{JOB['host']}_dl.bin"
     run(["scp", "-q", "-i", key, "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
-         "-o", "ConnectTimeout=5", f"{user}@{targets['files']}:/tmp/lab/web/www/{fname}", dest], 30)
+         "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", f"{user}@{targets['files']}:/tmp/lab/web/www/{fname}",
+         dest], 30)
     return "file_transfer", {"target": targets["files"], "file": fname}
 
 
 #Sesja z grupy admin (wagi w profiles.GROUPS)
 #2-4 różne serwery (ssh, files, web, mail) - na każdym jedno polecenie z krótszym limitem 8s
 #to wzorzec admina - wszedł, sprawdził, wyszedł - na wielu maszynach
+#sshd działa na wszystkich czterech serwerach (env/services.py start_services)
 def session_ssh_admin(rng):
     targets = JOB["targets"]
     services = [targets["ssh"], targets["files"], targets["web"], targets["mail"]]
@@ -171,7 +167,7 @@ SESSIONS = {
 # średni odstęp do następnej sesji = 3600 / (sph * mnożnik) - faktyczny odstęp losuje z rozkładu wykładniczego
 # i od razu wyznacza chwilę startu następnej sesji (odstęp liczony od startu do startu, nie od końca sesji)
 #wykonuje ją - gdyby funkcja rzuciła nieoczekiwany wyjątek, zapisuje session_error i idzie dalej
-# to jest proces Poissona - starty sesji pojawiają się niezależnie w losowych odstępach czasu (Paxson i Floyd 1995)
+# to jest proces Poissona - starty sesji pojawiają się niezależnie w losowych odstępach czasu
 # spi do startu następnej sesji, ale nie dłużej niż do końca sesji (gdy sesja trwała dłużej, następna rusza od razu)
 # rekord w logu ma pole start (chwila startu sesji): stats/summarize.py bada odstępy między startami,
 # bo to je losuje proces Poissona (t to chwila zapisu, czyli koniec sesji)
@@ -182,6 +178,7 @@ def loop_sessions(rng, group, deadline):
     base_sessions_per_hour = group["sph"]
     while time.time() < deadline:
         hour = profiles.hour_of_day(time.time() - JOB["start"], JOB["start_hour"])
+        #max(0.1) to tylko zabezpieczenie przed zerową stawką; przy obecnych wagach nigdy nie działa
         sessions_per_hour = max(0.1, base_sessions_per_hour * curve[hour])
         mean_gap = 3600.0 / sessions_per_hour  # sekundy (czas rzeczywisty)
         started = time.time()
@@ -201,8 +198,12 @@ def loop_iot(rng, group, deadline):
     targets = JOB["targets"]
     interval = group["heartbeat_s"]
     while time.time() < deadline:
-        run(["curl", "-s", "-o", "/dev/null", "--max-time", "5", f"http://{targets['xweb']}/"], 6)
-        log("iot_heartbeat", target=targets["xweb"])
+        #błąd jednego heartbeatu nie może po cichu zakończyć pętli: zapis do logu i następna próba
+        try:
+            run(["curl", "-s", "-o", "/dev/null", "--max-time", "5", f"http://{targets['xweb']}/"], 6)
+            log("iot_heartbeat", target=targets["xweb"])
+        except Exception as error:
+            log("iot_error", error=repr(error))
         jitter = rng.uniform(-0.05, 0.05) * interval  # niewielki, by nie było idealnie okresowe
         sleep_until(min(time.time() + max(0.1, interval + jitter), deadline))
 
@@ -212,11 +213,15 @@ def loop_iot(rng, group, deadline):
 def background_loop(rng, deadline):
     targets = JOB["targets"]
     while time.time() < deadline:
-        run(["dig", "+tries=1", "+time=2", "+short", rng.choice(profiles.DNS_NAMES_INTERNAL),
-             f"@{targets['dns']}"], 4)
-        if rng.random() < 0.5:
-            run(["curl", "-s", "-o", "/dev/null", "--max-time", "5", f"http://{targets['xweb']}/"], 6)
-        log("background")
+        #błąd nie może po cichu zakończyć wątku tła: zapis do logu i następna iteracja
+        try:
+            run(["dig", "+tries=1", "+time=2", "+short", rng.choice(profiles.DNS_NAMES_INTERNAL),
+                 f"@{targets['dns']}"], 4)
+            if rng.random() < 0.5:
+                run(["curl", "-s", "-o", "/dev/null", "--max-time", "5", f"http://{targets['xweb']}/"], 6)
+            log("background")
+        except Exception as error:
+            log("background_error", error=repr(error))
         sleep_until(min(time.time() + rng.uniform(30, 90), deadline))
 
 #Main wczytuje plik zadania do JOB
@@ -255,7 +260,8 @@ def main():
             background.join(timeout=5)
     finally:
         log("worker_stop")
-        LOG.close()
+        with LOG_LOCK:  #pod blokadą, żeby wątek tła nie pisał w trakcie zamykania
+            LOG.close()
 
 
 if __name__ == "__main__":

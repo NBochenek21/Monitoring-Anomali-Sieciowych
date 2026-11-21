@@ -7,9 +7,9 @@ attacker: o3                 # host startowy (zainfekowany)
 targets: [web, dns, ssh, files, mail]
 tool: nmap
 params:
-  scan_flags: "-sS"          # SYN scan jak w CIC
+  scan_flags: "-sS"          # SYN scan (jeden z kilku typów skanu nmapa użytych w CIC)
   ports: "1-1024"
-  timing: "-T3"              # domyślny szablon nmapa („normal”), podany jawnie; tempo ogranicza --max-rate
+  timing: "-T3"              # domyślny szablon nmapa ("normal"), podany jawnie; tempo ogranicza --max-rate
   # -n: bez odwrotnych zapytań DNS o cele (szły do resolvera WSL spoza sieci laboratorium
   # i dawały przepływ UDP z etykietą normal w każdym wystąpieniu A1)
   extra: "-n --max-rate 300" # limit tempa, żeby nie dławić Mininetu

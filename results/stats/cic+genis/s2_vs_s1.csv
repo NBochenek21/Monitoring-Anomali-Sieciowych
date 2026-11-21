@@ -1,5 +1,5 @@
 model,sessions,fpr_mean_difference,fpr_lower_in,fpr_equal_in,recall_mean_difference,recall_higher_in,recall_equal_in
-FT,6,-0.578,6,0,-0.001,0,0
-IF,6,-0.009,6,0,0.712,6,0
-RF,6,-0.441,6,0,0.0,6,0
-baseline,6,0.008,0,0,0.264,6,0
+FT,6,-0.547524,6,0,-0.000558,0,0
+IF,6,-0.014338,6,0,0.713443,6,0
+RF,6,-0.438674,6,0,0.000183,6,0
+baseline,6,0.006586,0,0,0.264061,6,0

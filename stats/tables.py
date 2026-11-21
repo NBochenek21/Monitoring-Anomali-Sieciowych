@@ -1,30 +1,14 @@
 #!/usr/bin/env python3
-"""Tabele liczbowe pracy w LaTeX-u (booktabs), liczone z danych i wyników, bez przepisywania liczb ręcznie.
+"""Tabele liczbowe pracy w LaTeX-u, liczone prosto z danych i wyników (bez przepisywania liczb).
 
-Każda tabela to osobny plik praca/tabele/<nazwa>.tex z samym środowiskiem tabular; podpis, etykietę
-i otoczenie table dodaje się w tekście pracy:
+Każda tabela to plik praca/tabele/<nazwa>.tex z samym tabular; podpis i etykietę dodaje się w tekście
+przez input. Liczby po polsku: przecinek dziesiętny, odstęp co trzy cyfry od 10 000.
+Źródła: zbiory źródłowe (liczności klas, próbka), sesje z Mininetu (sesje, skład klas, ataki, mediany
+cech kontekstu) i wyniki statystyki (metryki, S2 wobec S1, recall per atak, koszt, realizm).
 
-    \\begin{table}[htb]
-      \\centering
-      \\caption{Sesje nagrane w Mininecie}
-      \\label{tab:sesje}
-      \\input{tabele/sesje}
-    \\end{table}
-
-Liczby w polskiej notacji: przecinek dziesiętny, spacja (\\,) co trzy cyfry w liczbach od 10 000.
-Źródła liczb:
-  1. zbiory źródłowe (data/flows/cic.parquet, genis.parquet): liczności klas po etykietowaniu
-     i liczności próbki do treningu i walidacji (te same funkcje podziału co models/run_experiments.py),
-  2. sesje z Mininetu (data/flows/M0-M6.parquet oraz log, ground truth i pcap z katalogu sesji):
-     sesje, skład klas, wystąpienia ataków, mediany cech kontekstu hosta w każdej klasie (M1-M6),
-  3. wyniki statystyki (results/stats/<wariant>/*.csv ze stats/summarize.py i metrics.csv z results/):
-     metryki S0, S1 i S2, S2 wobec S1, punkt pracy na krzywej ROC, recall każdego ataku, średni recall
-     po atakach, F1 każdej klasy RF, koszt, wyniki RF i FT względem progu, realizm ruchu.
-
-Uruchamiać w WSL (pyarrow do plików parquet), z katalogu głównego repozytorium:
-
+Uruchamianie w WSL (pyarrow):
     /root/venvs/ft/bin/python stats/tables.py
-    /root/venvs/ft/bin/python stats/tables.py --only results   # same wyniki (tylko pliki CSV)
+    /root/venvs/ft/bin/python stats/tables.py --only results
 """
 import argparse
 import glob
@@ -34,7 +18,6 @@ import re
 import sys
 from decimal import ROUND_HALF_UP, Decimal
 
-import numpy as np
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -43,11 +26,12 @@ RESULTS = os.path.join(REPO, "results")
 FLOWS = os.path.join(REPO, "data", "flows")
 sys.path[:0] = [os.path.join(REPO, "models"), os.path.join(REPO, "features")]
 
+from summarize import IOT_IP, MODELS  #noqa: E402
+
 VARIANTS = {"cic": "CIC", "cic+genis": "CIC + GeNIS"}
 SOURCES = {"cic": "CIC-IDS2017", "genis": "GeNIS"}
 SESSIONS = ["M0", "M1", "M2", "M3", "M4", "M5", "M6"]
 TEST_SESSIONS = SESSIONS[1:]
-MODELS = ["baseline", "IF", "RF", "FT"]
 ATTACKS = ["port_scan", "ssh_bruteforce", "dos_slow", "http_flood", "c2_beaconing"]
 NOT_USED = ["attempted", "poza_zakresem"]
 CLASS_NAMES = {
@@ -61,48 +45,49 @@ CLASS_NAMES = {
     "poza_zakresem": "poza zakresem (usuwane)",
 }
 SOURCE_CLASSES = ["normal", "port_scan", "ssh_bruteforce", "dos_slow", "http_flood"]
-IOT_IP = "10.0.1.17"  # q2, heartbeat IoT (ten sam adres co w models/run_experiments.py)
 HEADER = "% plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj\n"
 
 
-# ---------------------------------------------------------------- liczby po polsku
+#---------------------------------------------------------------- liczby po polsku
 
+#zaokrąglenie połówek w górę na zapisie dziesiętnym liczby (0,0075 -> 0,008), a nie na binarnym,
+#w którym 0,0075 jest odrobinę mniejsze i format Pythona daje 0,007
 def rounded(x, places):
-    """Zaokrąglenie połówek w górę na zapisie dziesiętnym liczby (0,0075 -> 0,008), a nie na binarnym,
-    w którym 0,0075 jest odrobinę mniejsze i format Pythona daje 0,007."""
     return Decimal(repr(float(x))).quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
 
 
+#liczba z przecinkiem dziesiętnym; minus jako znak matematyczny
 def number(x, places=3):
-    """Liczba z przecinkiem dziesiętnym; minus jako znak matematyczny."""
     if x is None or pd.isna(x):
         return "--"
     text = str(rounded(x, places))
-    if float(text) == 0:  # bez „-0,000”
+    if float(text) == 0:  #bez "-0,000"
         text = text.lstrip("-")
     text = text.replace(".", ",")
-    return f"${text}$" if text.startswith("-") else text
+    #minus tekstowy (\textminus), nie $-...$: w trybie matematycznym cyfry byłyby krojem Computer Modern,
+    #a nie Times jak reszta tabeli, i przecinek dostałby odstęp za sobą
+    return "\\textminus{}" + text[1:] if text.startswith("-") else text
 
 
+#liczba całkowita; od 10 000 cyfry w grupach po trzy oddzielone wąską spacją
 def integer(n):
-    """Liczba całkowita; od 10 000 cyfry w grupach po trzy oddzielone wąską spacją."""
     n = int(rounded(n, 0))
     if abs(n) < 10000:
         return str(n)
     return f"{n:,}".replace(",", "\\,")
 
 
+#średnia +/- połowa 95% przedziału ufności (bez przedziału, gdy go nie ma)
 def mean_ci(mean, half_width, places=3):
-    """Średnia ± połowa 95% przedziału ufności (bez przedziału, gdy go nie ma)."""
     if pd.isna(half_width):
         return number(mean, places)
-    return f"{number(mean, places)}$\\,\\pm\\,${number(half_width, places)}"  # wąskie spacje: węższa tabela
+    return f"{number(mean, places)}$\\,\\pm\\,${number(half_width, places)}"  #wąskie spacje: węższa tabela
 
 
+#różnica ze znakiem: "+0,321" albo z minusem tekstowym
 def signed(x, places=3):
-    """Różnica ze znakiem: „+0,321”, „−0,008”."""
     text = number(x, places)
-    return text if text.startswith("$") else "+" + text
+    return text if text.startswith("\\textminus") else "+" + text
 
 
 def seconds(x):
@@ -121,21 +106,21 @@ def per_second(x):
 
 def percent(x):
     if 0 < x < 0.005:
-        return "$<1$\\%"  # nie „0%”, gdy jakieś przepływy są
+        return "$<1$\\%"  #nie "0%", gdy jakieś przepływy są
     return f"{rounded(x * 100, 0)}\\%"
 
 
-# ---------------------------------------------------------------- zapis tabeli
+#---------------------------------------------------------------- zapis tabeli
 
+#nagłówek kolumny w kilku liniach (znak nowej linii w tekście), żeby tabela zmieściła się w kolumnie
 def stacked(cell):
-    """Nagłówek kolumny w kilku liniach (znak nowej linii w tekście), żeby tabela zmieściła się w kolumnie."""
     if "\n" not in cell:
         return cell
-    # „{}” po \\, żeby linia zaczynająca się od „[” (np. „[MB]”) nie była wzięta za odstęp \\[...]
+    #"{}" po \\, żeby linia zaczynająca się od "[" (np. "[MB]") nie była wzięta za odstęp \\[...]
     return "\\begin{tabular}[b]{@{}c@{}}" + " \\\\ {}".join(cell.split("\n")) + "\\end{tabular}"
 
 
-# nazwy klas w nagłówkach kolumn, w kilku liniach (węższa tabela)
+#nazwy klas w nagłówkach kolumn, w kilku liniach (węższa tabela)
 CLASS_HEADERS = {
     "normal": "ruch\nnormalny",
     "port_scan": "A1\nskan portów",
@@ -150,8 +135,8 @@ def class_header(name):
     return CLASS_HEADERS[name]
 
 
+#środowisko tabular z booktabs; groups = numery wierszy, przed którymi idzie \midrule
 def tabular(columns, header, rows, groups=()):
-    """Środowisko tabular z booktabs; groups = numery wierszy, przed którymi idzie \\midrule."""
     lines = [f"\\begin{{tabular}}{{{columns}}}", "\\toprule"]
     lines.append(" & ".join(stacked(cell) for cell in header) + " \\\\")
     lines.append("\\midrule")
@@ -177,8 +162,8 @@ def stats_csv(variant, name):
     return pd.read_csv(os.path.join(RESULTS, "stats", variant, f"{name}.csv"))
 
 
+#nazwa wariantu w nazwie pliku (bez "+")
 def slug(variant):
-    """Nazwa wariantu w nazwie pliku (bez „+”)."""
     return variant.replace("+", "_")
 
 
@@ -186,10 +171,10 @@ def variant_names(variant):
     return VARIANTS.get(variant, variant)
 
 
-# ---------------------------------------------------------------- 1. zbiory źródłowe
+#---------------------------------------------------------------- 1. zbiory źródłowe
 
-# Zbiór źródłowy tak jak w run_experiments.load_source, ale tylko z kolumnami potrzebnymi do liczności
-# (bez cech okienkowych, które na liczności nie wpływają).
+#zbiór źródłowy tak jak w run_experiments.load_source, ale tylko z kolumnami potrzebnymi do liczności
+#(bez cech okienkowych, które na liczności nie wpływają).
 def load_source_columns(names):
     parts = []
     for name in names:
@@ -202,7 +187,7 @@ def load_source_columns(names):
 
 
 def source_tables(folder):
-    import run_experiments as rx  # te same funkcje podziału i próbki co w treningu (importuje Kerasa)
+    import run_experiments as rx  #te same funkcje podziału i próbki co w treningu (importuje Kerasa)
 
     full = load_source_columns(list(SOURCES))
     counts = full.groupby(["attack_type", "source"]).size().unstack(fill_value=0)
@@ -216,8 +201,9 @@ def source_tables(folder):
                  groups=(len(SOURCE_CLASSES), len(rows) - 1)),
          "liczba przepływów każdej klasy po etykietowaniu (data/flows/cic.parquet i genis.parquet)")
 
-    # próbka: S0 = pierwsze 70% w czasie, S1 = cały zbiór; w obu walidacja = ostatnie 15% części treningowej,
-    # z każdej pary (źródło, klasa) najwyżej FLOWS_PER_CLASS przepływów
+    #próbka: S0 = pierwsze 70% każdego fragmentu (nagranie, klasa), S1 = cały zbiór; w obu walidacja =
+    #ostatnie 15% każdego fragmentu części treningowej,
+    #z każdej pary (źródło, klasa) najwyżej FLOWS_PER_CLASS przepływów
     source = full[~full["attack_type"].isin(rx.NOT_USED)].reset_index(drop=True)
     parts = {"S0": rx.split_in_time(source, rx.TRAINING_SHARE_S0)[0], "S1": source}
     rows = []
@@ -226,7 +212,7 @@ def source_tables(folder):
             _, sample, validation = rx.split_and_sample(flows)
             for part, table in (("trening", sample), ("walidacja", validation)):
                 table = table[table["source"] == name]["attack_type"].value_counts()
-                rows.append([VARIANTS.get(name, SOURCES[name]), scenario, part]  # krótko: CIC, GeNIS
+                rows.append([VARIANTS.get(name, SOURCES[name]), scenario, part]  #krótko: CIC, GeNIS
                             + [integer(table.get(c, 0)) for c in SOURCE_CLASSES])
     header = ["Zbiór", "Scen.", "Część"] + [class_header(c) for c in SOURCE_CLASSES]
     save(folder, "probka", tabular("lll" + "r" * len(SOURCE_CLASSES), header, rows, groups=(4,)),
@@ -234,10 +220,10 @@ def source_tables(folder):
          "wariant CIC używa wierszy CIC-IDS2017, wariant CIC + GeNIS obu zbiorów")
 
 
-# ---------------------------------------------------------------- 2. sesje z Mininetu
+#---------------------------------------------------------------- 2. sesje z Mininetu
 
-# Ostatni przebieg każdej sesji w logu record_all.sh: parametry z linii startu, ataki wykonane
-# i zaplanowane, największa przerwa między pakietami i rozmiar pcap.
+#ostatni przebieg każdej sesji w logu record_all.sh: parametry z linii startu, ataki wykonane
+#i zaplanowane, największa przerwa między pakietami i rozmiar pcap.
 def session_log(path):
     text = open(path, encoding="utf-8").read()
     info = {}
@@ -280,7 +266,7 @@ def session_tables(folder, sessions_dir):
               "PCAP\n[MB]", "Przerwa\n[s]"]
     save(folder, "sesje", tabular("lrrrrrrrr", header, rows, groups=(1,)),
          "udział ataków liczony bez klasy attempted; przerwa: najdłuższa przerwa między pakietami w nagraniu;\n"
-         "„x z y”: ataki wykonane z zaplanowanych\n"
+         "'x z y': ataki wykonane z zaplanowanych\n"
          "(atak, który nie zmieściłby się przed końcem sesji, nie startuje)")
 
     counts = pd.DataFrame({s: flows[s]["attack_type"].value_counts() for s in SESSIONS}).fillna(0)
@@ -308,8 +294,8 @@ def session_tables(folder, sessions_dir):
          tabular("l" + "r" * 8, ["Atak"] + SESSIONS + ["M1--M6"], rows, groups=(len(rows) - 1,)),
          "liczba wystąpień ataków w sesjach (ground_truth.jsonl)")
 
-    # mediany cech kontekstu hosta (okno 60 s) w każdej klasie, przepływy testowe M1-M6 razem;
-    # cechy liczone na pełnej sesji (z attempted), tak jak w run_experiments.load_session
+    #mediany cech kontekstu hosta (okno 60 s) w każdej klasie, przepływy testowe M1-M6 razem;
+    #cechy liczone na pełnej sesji (z attempted), tak jak w run_experiments.load_session
     parts = []
     for s in TEST_SESSIONS:
         full = add_window_features(flows[s].copy())
@@ -331,10 +317,10 @@ def session_tables(folder, sessions_dir):
     save(folder, "cechy_kontekstu", tabular("lrrrrrrr", header, rows, groups=(2,)),
          "mediany cech kontekstu hosta, przepływy testowe M1-M6 razem; ruch normalny bez heartbeatu IoT;\n"
          "CV (regularność odstępów do jednego celu) oceniony, gdy 0 < CV < 1 (baseline_model.assessed);\n"
-         "„Z oceną CV”: odsetek przepływów z ocenioną regularnością, „Mediana CV”: wśród nich")
+         "'Z oceną CV': odsetek przepływów z ocenioną regularnością, 'Mediana CV': wśród nich")
 
 
-# ---------------------------------------------------------------- 3. wyniki
+#---------------------------------------------------------------- 3. wyniki
 
 def metrics_tables(folder, variant):
     summary = stats_csv(variant, "summary").set_index(["scenario", "model"])
@@ -346,7 +332,8 @@ def metrics_tables(folder, variant):
                                              for m in ("recall", "fpr", "fpr_iot", "roc_auc", "f1")])
     header = ["Model", "Scen.", "Recall", "FPR", "FPR IoT", "AUC-ROC", "F1\n(pomocniczo)"]
     save(folder, f"metryki_{slug(variant)}", tabular("llccccc", header, rows, groups=(2, 4, 6)),
-         f"wariant {variant_names(variant)}: średnia ± 95% CI po sesjach M1-M6 (results/stats/{variant}/summary.csv)")
+         f"wariant {variant_names(variant)}: średnia +/- 95% CI po sesjach M1-M6 "
+         f"(results/stats/{variant}/summary.csv)")
 
     attacks = stats_csv(variant, "recall_per_attack").set_index(["scenario", "model", "attack"])["recall"]
     rows = [[model, scenario] + [number(attacks.get((scenario, model, a)), 2) for a in ATTACKS]
@@ -355,6 +342,33 @@ def metrics_tables(folder, variant):
          tabular("ll" + "c" * len(ATTACKS), ["Model", "Scen."] + [class_header(a) for a in ATTACKS], rows,
                  groups=(2, 4, 6)),
          f"wariant {variant_names(variant)}: recall każdego ataku, średnia po sesjach M1-M6")
+
+
+#AUC-ROC każdego ataku i recall każdego ataku przy FPR 1% (uporządkowanie wyników niezależnie od progu)
+def ranking_tables(folder, variant):
+    summary = stats_csv(variant, "summary").set_index(["scenario", "model"])
+    auc = stats_csv(variant, "auc_per_attack").set_index(["scenario", "model", "attack"])["auc"]
+    header = ["Model", "Scen.", "Wszystkie\nataki"] + [class_header(a) for a in ATTACKS]
+    rows = [[model, scenario, number(summary.loc[(scenario, model), "roc_auc"], 2)]
+            + [number(auc.get((scenario, model, a)), 2) for a in ATTACKS]
+            for model in MODELS for scenario in ("S1", "S2")]
+    columns = "ll" + "c" * (len(ATTACKS) + 1)
+    save(folder, f"auc_ataki_{slug(variant)}", tabular(columns, header, rows, groups=(2, 4, 6)),
+         f"wariant {variant_names(variant)}: AUC-ROC każdego ataku (atak wobec ruchu normalnego sesji), średnia po\n"
+         "sesjach M1-M6 (auc_per_attack.csv); wszystkie ataki: średnia po sesjach AUC-ROC na wszystkich\n"
+         "przepływach sesji (summary.csv)")
+
+    #rzeczywisty FPR osobną kolumną: przy remisach wyników (baseline, RF) wychodzi poniżej 1%
+    recall = stats_csv(variant, "recall_at_fpr1").set_index(["scenario", "model", "attack"])
+    rows = [[model, scenario, number(recall.loc[(scenario, model, "wszystkie"), "fpr"])]
+            + [number(recall["recall"].get((scenario, model, a)), 2) for a in ["wszystkie"] + ATTACKS]
+            for model in MODELS for scenario in ("S1", "S2")]
+    save(folder, f"recall_fpr1_{slug(variant)}",
+         tabular("ll" + "c" * (len(ATTACKS) + 2), header[:2] + ["FPR\n(rzecz.)"] + header[2:], rows,
+                 groups=(2, 4, 6)),
+         f"wariant {variant_names(variant)}: recall przy FPR najwyżej 1% (próg dobrany w każdej sesji na jej\n"
+         "ruchu normalnym, więc ocena uporządkowania wyników, a nie punkt pracy), średnia po sesjach M1-M6\n"
+         "(recall_at_fpr1.csv); FPR (rzecz.): średni FPR przy tym progu, niższy od 1% przy remisach wyników")
 
 
 def s0_table(folder):
@@ -369,7 +383,8 @@ def s0_table(folder):
     groups = tuple(range(len(MODELS), len(rows), len(MODELS)))
     save(folder, "s0", tabular("lllcccc", ["Wariant", "Test", "Model", "Recall", "FPR", "AUC-ROC", "F1"],
                                rows, groups=groups),
-         "S0: test na ostatnich 30% (w czasie) zbioru źródłowego, osobno dla każdego źródła")
+         "S0: test na ostatnich 30% każdego fragmentu (nagranie, klasa) zbioru źródłowego,\n"
+         "osobno dla każdego źródła")
 
 
 def comparison_tables(folder):
@@ -414,7 +429,7 @@ def comparison_tables(folder):
             rows.append(row)
     header = ["Model", "Scen."] + [f"{variant_names(v)}\n{a}" for v in VARIANTS for a in ("5 ataków", "A1--A4")]
     save(folder, "sredni_recall", tabular("llcccc", header, rows, groups=(2, 4, 6)),
-         "średni recall po atakach (każdy atak z tą samą wagą), średnia ± 95% CI po sesjach M1-M6")
+         "średni recall po atakach (każdy atak z tą samą wagą), średnia +/- 95% CI po sesjach M1-M6")
 
 
 def rf_f1_table(folder):
@@ -438,8 +453,8 @@ def rf_f1_table(folder):
          "klasy c2_beaconing nie ma w treningu, więc jej F1 = 0 z definicji")
 
 
+#liczba przebiegów i epoka wag FT w S1 i S2 (metrics.csv; w S2 ta sama w każdej sesji)
 def ft_epochs(variant):
-    """Liczba przebiegów i epoka wag FT w S1 i S2 (metrics.csv; w S2 ta sama w każdej sesji)."""
     result = {}
     for folder, scenario in (("S0_S1", "S1"), ("S2", "S2")):
         m = pd.read_csv(os.path.join(RESULTS, folder, variant, "metrics.csv"))
@@ -464,7 +479,8 @@ def cost_table(folder):
             rows.append(row)
     header = ["Wariant", "Model", "Trening\nS1 [s]", "Adaptacja\nS2 [s]", "Przepływy/s\nS1", "Przepływy/s\nS2"]
     save(folder, "koszt", tabular("llrrrr", header, rows, groups=(len(MODELS),)),
-         "średnio na sesję (cost.csv); FT w nawiasie: liczba przebiegów / epoka, z której są wagi")
+         "trening: jeden model na wariant i scenariusz, przepustowość: średnio na sesję (cost.csv);\n"
+         "FT w nawiasie: liczba przebiegów / epoka, z której są wagi")
 
 
 def threshold_table(folder, models=("RF", "FT")):
@@ -496,7 +512,8 @@ def realism_table(folder):
     rows = [[names.get(i, r["traffic"]), integer(r["gaps"]), number(r["cv"]), number(r["ks_d"])]
             for i, r in realism.iterrows()]
     save(folder, "realizm", tabular("lrcc", ["Ruch", "Odstępy", "CV", "D (K-S,\nwykładniczy)"], rows),
-         "odstępy między startami sesji użytkowników i heartbeatu IoT w M1-M6 (traffic_realism.csv)")
+         "odstępy między startami sesji użytkowników i heartbeatu IoT w M1-M6 (traffic_realism.csv);\n"
+         "bez odstępów nachodzących na atak z danego hosta (jego ruch normalny jest wtedy wstrzymany)")
 
 
 def main():
@@ -511,6 +528,7 @@ def main():
     if args.only in (None, "results"):
         for variant in VARIANTS:
             metrics_tables(args.out, variant)
+            ranking_tables(args.out, variant)
         s0_table(args.out)
         comparison_tables(args.out)
         rf_f1_table(args.out)

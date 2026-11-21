@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Orkiestrator ataków: odpala scenariusze A1–A4 i Z1 w mininecie i zapisuje
+"""Orkiestrator ataków: odpala scenariusze A1-A4 i Z1 w mininecie i zapisuje
 prawdę o atakach (ground truth) do ground_truth.jsonl
 
 Jak to działa:
@@ -32,10 +32,12 @@ import topology  # noqa: E402
 
 ATTACKS_DIR = os.path.dirname(os.path.abspath(__file__))
 TOOLS_DIR = os.path.join(ATTACKS_DIR, "tools")
-# Limit czasu jednego narzędzia [s]: najdłuższy atak (Z1) trwa najwyżej ok. 405 s (w M0-M6 199-345 s);
+# Limit czasu jednego narzędzia [s]: najdłuższy atak (Z1) to ok. 405 s samych odstępów plus czas żądań
+# (do 5 s każde przy wolnym C2), w M1-M6 199-345 s;
 # zawieszone narzędzie
 # (np. patator na przeciążonym sshd) nie może wydłużyć okna ataku w ground truth bez końca.
-# Przekroczenie limitu daje kod wyjścia 124 (timeout) w ground truth i ostrzeżenie na ekranie.
+# Przekroczenie limitu daje kod wyjścia 124 (timeout), a 137, gdy narzędzie dostało SIGKILL po -k 10;
+# kod trafia do ground truth i na ekran.
 TOOL_TIMEOUT_S = 900
 
 
@@ -81,8 +83,8 @@ def run_patator(host, spec, target_ips, log):
     wordlist = os.path.join(ATTACKS_DIR, params["wordlist"])  # pełna ścieżka do listy haseł
     target = target_ips[0]                                    # brute-force SSH ma jeden cel
     # Bez filtra -x: w logu zostają wszystkie próby (udane i nieudane) - to materiał do etykiet.
-    # Opcje globalne patatora wymagają formy --opcja=wartość (wartość po spacji jest brana
-    # za argument modułu key=value).
+    # Opcje globalne w formie --opcja=wartość (patator przyjmuje też wartość po spacji, tak jest czytelniej).
+    # --rate-limit to przerwa przed każdą próbą w każdym wątku osobno (4 wątki co 0,3 s = ok. 13 prób/s).
     cmd = (f"patator ssh_login host={target} port=22 user={params['user']} "
            f"password=FILE0 0='{wordlist}' persistent=0 "
            f"--threads={params.get('threads', 4)} --rate-limit={params.get('rate_limit_s', 0.3)} "
@@ -136,8 +138,8 @@ TOOL_PARAMS = {
     "nmap": ({"scan_flags", "ports"}, {"timing", "extra"}),
     "patator": ({"user", "wordlist"}, {"threads", "rate_limit_s"}),
     "slowhttptest": ({"mode", "connections", "rate", "interval", "duration"}, set()),
-    "http_flood": ({"duration", "threads", "rps"}, set()),
-    "beacon": ({"count", "interval", "jitter"}, {"exfil_every", "exfil_bytes"}),
+    "http_flood": ({"duration", "threads", "rps"}, {"seed"}),
+    "beacon": ({"count", "interval", "jitter"}, {"exfil_every", "exfil_bytes", "seed"}),
 }
 ATTACK_TYPES = {"port_scan", "ssh_bruteforce", "dos_slow", "http_flood", "c2_beaconing"}
 SPEC_KEYS = ("name", "type", "mitre", "attacker", "targets", "tool", "params")
@@ -176,7 +178,9 @@ def run_attack(net, spec, out, attacker_name):
     exit_code = RUNNERS[spec["tool"]](host, spec, target_ips, log)
     end = time.time()
     # rekord zapisuję także przy błędzie narzędzia: check_labels porówna przepływy z logiem narzędzia,
-    # a kod wyjścia w ground truth pokazuje, które wystąpienie trzeba obejrzeć
+    # a kod wyjścia w ground truth pokazuje, które wystąpienie trzeba obejrzeć.
+    # Przy Ctrl+C albo wyjątku w trakcie narzędzia rekordu nie ma; run_session kończy się wtedy kodem
+    # różnym od 0 i record_all.sh odrzuca całą sesję
     if exit_code != 0:
         print(f"  UWAGA: {spec['name']} ({spec['tool']}) zakończył się kodem {exit_code}, log: {log}")
 

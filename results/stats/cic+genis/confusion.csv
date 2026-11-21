@@ -2,97 +2,97 @@ scenario,model,true,predicted,count
 S1,FT,c2_beaconing,alarm,159
 S1,FT,c2_beaconing,brak alarmu,9
 S1,FT,dos_slow,alarm,5097
-S1,FT,http_flood,alarm,49254
-S1,FT,normal,alarm,14978
-S1,FT,normal,brak alarmu,10619
-S1,FT,port_scan,alarm,122895
-S1,FT,port_scan,brak alarmu,43
-S1,FT,ssh_bruteforce,alarm,398
-S1,FT,ssh_bruteforce,brak alarmu,16
+S1,FT,http_flood,alarm,49156
+S1,FT,normal,alarm,14430
+S1,FT,normal,brak alarmu,11172
+S1,FT,port_scan,alarm,122905
+S1,FT,port_scan,brak alarmu,42
+S1,FT,ssh_bruteforce,alarm,394
+S1,FT,ssh_bruteforce,brak alarmu,20
 S1,IF,c2_beaconing,brak alarmu,168
 S1,IF,dos_slow,brak alarmu,5097
-S1,IF,http_flood,brak alarmu,49254
-S1,IF,normal,alarm,579
-S1,IF,normal,brak alarmu,25018
-S1,IF,port_scan,alarm,282
-S1,IF,port_scan,brak alarmu,122656
+S1,IF,http_flood,brak alarmu,49156
+S1,IF,normal,alarm,581
+S1,IF,normal,brak alarmu,25021
+S1,IF,port_scan,alarm,273
+S1,IF,port_scan,brak alarmu,122674
 S1,IF,ssh_bruteforce,brak alarmu,414
 S1,RF,c2_beaconing,alarm,130
 S1,RF,c2_beaconing,brak alarmu,38
 S1,RF,dos_slow,alarm,5097
-S1,RF,http_flood,alarm,49254
-S1,RF,normal,alarm,11641
-S1,RF,normal,brak alarmu,13956
-S1,RF,port_scan,alarm,122938
+S1,RF,http_flood,alarm,49156
+S1,RF,normal,alarm,11624
+S1,RF,normal,brak alarmu,13978
+S1,RF,port_scan,alarm,122947
 S1,RF,ssh_bruteforce,alarm,414
 S1,RF (klasy),c2_beaconing,dos_slow,130
 S1,RF (klasy),c2_beaconing,normal,38
 S1,RF (klasy),dos_slow,dos_slow,5097
-S1,RF (klasy),http_flood,dos_slow,42083
-S1,RF (klasy),http_flood,http_flood,7171
-S1,RF (klasy),normal,dos_slow,2206
-S1,RF (klasy),normal,http_flood,5219
-S1,RF (klasy),normal,normal,13956
-S1,RF (klasy),normal,port_scan,1083
-S1,RF (klasy),normal,ssh_bruteforce,3133
-S1,RF (klasy),port_scan,port_scan,122938
+S1,RF (klasy),http_flood,dos_slow,41570
+S1,RF (klasy),http_flood,http_flood,7586
+S1,RF (klasy),normal,dos_slow,2220
+S1,RF (klasy),normal,http_flood,5187
+S1,RF (klasy),normal,normal,13978
+S1,RF (klasy),normal,port_scan,12
+S1,RF (klasy),normal,ssh_bruteforce,4205
+S1,RF (klasy),port_scan,port_scan,122947
 S1,RF (klasy),ssh_bruteforce,ssh_bruteforce,414
 S1,baseline,c2_beaconing,brak alarmu,168
 S1,baseline,dos_slow,brak alarmu,5097
-S1,baseline,http_flood,alarm,8467
-S1,baseline,http_flood,brak alarmu,40787
+S1,baseline,http_flood,alarm,8373
+S1,baseline,http_flood,brak alarmu,40783
 S1,baseline,normal,alarm,193
-S1,baseline,normal,brak alarmu,25404
-S1,baseline,port_scan,alarm,121407
-S1,baseline,port_scan,brak alarmu,1531
+S1,baseline,normal,brak alarmu,25409
+S1,baseline,port_scan,alarm,121380
+S1,baseline,port_scan,brak alarmu,1567
 S1,baseline,ssh_bruteforce,brak alarmu,414
-S2,FT,c2_beaconing,brak alarmu,168
-S2,FT,dos_slow,alarm,5088
-S2,FT,dos_slow,brak alarmu,9
-S2,FT,http_flood,alarm,49254
-S2,FT,normal,alarm,193
-S2,FT,normal,brak alarmu,25404
-S2,FT,port_scan,alarm,122931
-S2,FT,port_scan,brak alarmu,7
-S2,FT,ssh_bruteforce,alarm,324
-S2,FT,ssh_bruteforce,brak alarmu,90
+S2,FT,c2_beaconing,alarm,38
+S2,FT,c2_beaconing,brak alarmu,130
+S2,FT,dos_slow,alarm,5082
+S2,FT,dos_slow,brak alarmu,15
+S2,FT,http_flood,alarm,49156
+S2,FT,normal,alarm,415
+S2,FT,normal,brak alarmu,25187
+S2,FT,port_scan,alarm,122947
+S2,FT,ssh_bruteforce,alarm,392
+S2,FT,ssh_bruteforce,brak alarmu,22
 S2,IF,c2_beaconing,brak alarmu,168
-S2,IF,dos_slow,alarm,5053
-S2,IF,dos_slow,brak alarmu,44
-S2,IF,http_flood,brak alarmu,49254
-S2,IF,normal,alarm,352
-S2,IF,normal,brak alarmu,25245
-S2,IF,port_scan,alarm,122788
-S2,IF,port_scan,brak alarmu,150
+S2,IF,dos_slow,alarm,5071
+S2,IF,dos_slow,brak alarmu,26
+S2,IF,http_flood,brak alarmu,49156
+S2,IF,normal,alarm,212
+S2,IF,normal,brak alarmu,25390
+S2,IF,port_scan,alarm,122943
+S2,IF,port_scan,brak alarmu,4
 S2,IF,ssh_bruteforce,brak alarmu,414
 S2,RF,c2_beaconing,alarm,162
 S2,RF,c2_beaconing,brak alarmu,6
 S2,RF,dos_slow,alarm,5097
-S2,RF,http_flood,alarm,49254
-S2,RF,normal,alarm,348
-S2,RF,normal,brak alarmu,25249
-S2,RF,port_scan,alarm,122938
+S2,RF,http_flood,alarm,49156
+S2,RF,normal,alarm,389
+S2,RF,normal,brak alarmu,25213
+S2,RF,port_scan,alarm,122947
 S2,RF,ssh_bruteforce,alarm,414
-S2,RF (klasy),c2_beaconing,dos_slow,28
-S2,RF (klasy),c2_beaconing,http_flood,134
+S2,RF (klasy),c2_beaconing,dos_slow,1
+S2,RF (klasy),c2_beaconing,http_flood,161
 S2,RF (klasy),c2_beaconing,normal,6
 S2,RF (klasy),dos_slow,dos_slow,5097
-S2,RF (klasy),http_flood,http_flood,49254
-S2,RF (klasy),normal,dos_slow,51
-S2,RF (klasy),normal,http_flood,244
-S2,RF (klasy),normal,normal,25249
-S2,RF (klasy),normal,port_scan,23
-S2,RF (klasy),normal,ssh_bruteforce,30
-S2,RF (klasy),port_scan,port_scan,122938
+S2,RF (klasy),http_flood,http_flood,49156
+S2,RF (klasy),normal,dos_slow,56
+S2,RF (klasy),normal,http_flood,282
+S2,RF (klasy),normal,normal,25213
+S2,RF (klasy),normal,port_scan,9
+S2,RF (klasy),normal,ssh_bruteforce,42
+S2,RF (klasy),port_scan,port_scan,122947
 S2,RF (klasy),ssh_bruteforce,ssh_bruteforce,414
 S2,baseline,c2_beaconing,brak alarmu,168
 S2,baseline,dos_slow,alarm,4444
 S2,baseline,dos_slow,brak alarmu,653
-S2,baseline,http_flood,alarm,48660
-S2,baseline,http_flood,brak alarmu,594
-S2,baseline,normal,alarm,395
-S2,baseline,normal,brak alarmu,25202
-S2,baseline,port_scan,alarm,122889
-S2,baseline,port_scan,brak alarmu,49
-S2,baseline,ssh_bruteforce,alarm,93
-S2,baseline,ssh_bruteforce,brak alarmu,321
+S2,baseline,http_flood,alarm,48540
+S2,baseline,http_flood,brak alarmu,616
+S2,baseline,normal,alarm,363
+S2,baseline,normal,brak alarmu,25239
+S2,baseline,port_scan,alarm,122890
+S2,baseline,port_scan,brak alarmu,57
+S2,baseline,ssh_bruteforce,alarm,91
+S2,baseline,ssh_bruteforce,brak alarmu,323

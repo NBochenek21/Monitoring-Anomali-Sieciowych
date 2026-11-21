@@ -1,0 +1,21 @@
+% plik wygenerowany przez stats/tables.py; zmiany wprowadzać w skrypcie, nie tutaj
+% wariant CIC: AUC-ROC każdego ataku (atak wobec ruchu normalnego sesji), średnia po
+% sesjach M1-M6 (auc_per_attack.csv); wszystkie ataki: średnia po sesjach AUC-ROC na wszystkich
+% przepływach sesji (summary.csv)
+\begin{tabular}{llcccccc}
+\toprule
+Model & Scen. & \begin{tabular}[b]{@{}c@{}}Wszystkie \\ {}ataki\end{tabular} & \begin{tabular}[b]{@{}c@{}}A1 \\ {}skan portów\end{tabular} & \begin{tabular}[b]{@{}c@{}}A2 \\ {}brute-force \\ {}SSH\end{tabular} & \begin{tabular}[b]{@{}c@{}}A3 \\ {}wolny DoS\end{tabular} & \begin{tabular}[b]{@{}c@{}}A4 \\ {}HTTP flood\end{tabular} & \begin{tabular}[b]{@{}c@{}}Z1 \\ {}beaconing C2\end{tabular} \\
+\midrule
+baseline & S1 & 0,98 & 0,99 & 0,67 & 0,83 & 0,98 & 0,29 \\
+baseline & S2 & 0,99 & 0,99 & 0,74 & 0,91 & 0,99 & 0,16 \\
+\midrule
+IF & S1 & 0,83 & 0,98 & 0,35 & 0,96 & 0,45 & 0,78 \\
+IF & S2 & 0,93 & 1,00 & 0,83 & 1,00 & 0,75 & 0,77 \\
+\midrule
+RF & S1 & 1,00 & 1,00 & 0,55 & 1,00 & 0,99 & 0,83 \\
+RF & S2 & 1,00 & 1,00 & 1,00 & 1,00 & 1,00 & 0,99 \\
+\midrule
+FT & S1 & 0,91 & 1,00 & 0,97 & 0,98 & 0,70 & 0,45 \\
+FT & S2 & 1,00 & 1,00 & 0,99 & 1,00 & 1,00 & 0,60 \\
+\bottomrule
+\end{tabular}

@@ -55,9 +55,11 @@ def slowhttptest_connections(log):
 #to stąd check_labels bierze liczbe dla A2
 # Log patatora: każda próba to linia 'INFO - <code> <size> <time> | <hasło> | ...'.
 # hits = próby z kodem 0 (udane uwierzytelnienie).
+#(None, None), gdy logu nie ma. Liczy tylko próby z wynikiem; próby ponowione po błędzie połączenia
+#dają osobne połączenia TCP, ale nie mają linii z kodem
 def patator_attempts(log):
     if not os.path.exists(log):
-        return 0, 0
+        return None, None
     pat = re.compile(r"INFO - (\d+)\s+\d+\s+[\d.]+ \|")
     attempts = hits = 0
     with open(log) as f:
@@ -70,17 +72,20 @@ def patator_attempts(log):
     return attempts, hits
 
 #regex - z całego pliku
+#requests= liczy tylko udane żądania; nieudane połączenia też tworzą przepływy, więc to dolne oszacowanie.
+#None, gdy logu nie ma albo nie ma w nim podsumowania
 def flood_requests(log):
     if not os.path.exists(log):
-        return 0
+        return None
     with open(log) as f:
         m = re.search(r"requests=(\d+)", f.read())
-    return int(m.group(1)) if m else 0
+    return int(m.group(1)) if m else None
 
 #liczy linie z checkin i exfil w logu klienta (attacks/tools/beacon_client.py, tool_log z ground truth),
 #linie error pomija
+# None, gdy logu nie ma; 0, gdy log jest, ale żaden beacon się nie udał.
 def beacon_count(log):
     if not os.path.exists(log):
-        return 0
+        return None
     with open(log) as f:
         return sum(1 for line in f if "\tcheckin" in line or "\texfil" in line)

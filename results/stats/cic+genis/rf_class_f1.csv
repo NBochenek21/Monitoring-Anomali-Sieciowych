@@ -1,17 +1,17 @@
 scenario,class,flows,f1
-S1,normal,25597,0.705
-S1,port_scan,122938,0.996
-S1,ssh_bruteforce,414,0.209
-S1,dos_slow,5097,0.187
-S1,http_flood,49254,0.233
+S1,normal,25602,0.705639
+S1,port_scan,122947,0.999951
+S1,ssh_bruteforce,414,0.164514
+S1,dos_slow,5097,0.18838
+S1,http_flood,49156,0.24499
 S1,c2_beaconing,168,0.0
-S1,macro-F1,203468,0.388
-S1,macro-F1 (bez c2),203468,0.466
-S2,normal,25597,0.993
-S2,port_scan,122938,1.0
-S2,ssh_bruteforce,414,0.965
-S2,dos_slow,5097,0.992
-S2,http_flood,49254,0.996
+S1,macro-F1,203384,0.383912
+S1,macro-F1 (bez c2),203384,0.460695
+S2,normal,25602,0.992228
+S2,port_scan,122947,0.999963
+S2,ssh_bruteforce,414,0.951724
+S2,dos_slow,5097,0.99444
+S2,http_flood,49156,0.995514
 S2,c2_beaconing,168,0.0
-S2,macro-F1,203468,0.824
-S2,macro-F1 (bez c2),203468,0.989
+S2,macro-F1,203384,0.822311
+S2,macro-F1 (bez c2),203384,0.986774

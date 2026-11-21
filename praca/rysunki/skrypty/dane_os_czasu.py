@@ -18,6 +18,8 @@ flows = pd.read_parquet(os.path.join(REPO, "data", "flows", f"{SESJA}.parquet"),
                         columns=["bidirectional_first_seen_ms", "attack_type"])
 start = flows["bidirectional_first_seen_ms"].min() / 1000
 flows["bin"] = ((flows["bidirectional_first_seen_ms"] / 1000 - start) // BIN_S).astype(int) * BIN_S
+#attempted (próby bez danych) nie ma w treningu ani w teście, więc nie ma ich też na rysunku
+flows = flows[flows["attack_type"] != "attempted"]
 flows["grupa"] = flows["attack_type"].where(flows["attack_type"] == "normal", "atak")
 counts = flows.groupby(["bin", "grupa"]).size().unstack(fill_value=0)
 counts.to_csv(os.path.join(DANE, f"os_czasu_{SESJA}.csv"))

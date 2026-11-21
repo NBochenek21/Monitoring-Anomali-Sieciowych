@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 #shebang pozwala uruchomić skrypt bezpośrednio w linuksie
 
-"""Buduje i testuje topologię sieci w Mininecie.
+"""Buduje i testuje topologię sieci w mininecie
 
-Uruchamianie w WSL2 jako root:
+Trzeba urucjamiać jako root, bo mininet tworzy przestrzenie nazw, interfejsy
+i przełączniki w jądrze a do tego trzeba takich uprawnień.
+
     python3 env/topology.py
     python3 env/topology.py --cli
 """
+
 import argparse #argumenty wiersza polecen
 import json #wypisywanie wyników testów
 import os #operacja na systemie plików
-import re #regexy do parsowania
-import subprocess #wywoływanie komend systemowych 
+import re #regexy do wyciągania liczb z ping i tcpdumpa
+import subprocess #uruchomianie programów spoza mininetu  
 import sys #sys.exit
 import time #czekanie na start tcpdump w teście nagrywania
 
@@ -70,15 +73,17 @@ HOSTS = {
 #polecenia sysctl (IPv6) i nazwy funkcji ethtool (offloading) używane do ich wyłączenia
 
 #IPv6 W TEJ SIECI JEST WYŁĄCZONE W DWÓCH MIEJSCACH:
-# 1) w WSL na stałe: /etc/sysctl.d/90-lab-ipv6.conf (tworzy go env/setup/install_wsl_packages.sh),
-#    więc porty switchy, które powstają w głównej przestrzeni nazw WSL, od razu nie mają IPv6;
-#    build() sprawdza to ustawienie i kończy program z komunikatem, jeśli go brakuje,
-# 2) w każdym hoście (LabHost niżej): host ma własną przestrzeń nazw, a jądro nie przenosi
-#    do niej ustawienia z WSL (sprawdzone 29.10.2026), więc host wyłącza IPv6 sam.
+# 1)w WSL na stałe: /etc/sysctl.d/90-lab-ipv6.conf (tworzy go env/setup/install_wsl_packages.sh),
+#więc porty switchy, które powstają w głównej przestrzeni nazw WSL, od razu nie mają IPv6;
+#build() sprawdza to ustawienie i kończy program z komunikatem, jeśli go brakuje,
+
+#2)w każdym hoście (LabHost niżej): host ma własną przestrzeń nazw, a jądro nie przenosi
+#do niej ustawienia z WSL, więc host wyłącza IPv6 sam.
 #Test ipv6_off w run_checks potwierdza, że na r0 nie ma żadnego pakietu IPv6.
 
 #wyłączenie - wszytkich int, domyślny dla nowych i loopback
-#robimy to bo mininet domyślnie włącza IPv6 - niepotrzebny szum przez ogłoszenia sasiedztwa itp
+#robimy to bo nowa przestrzeń nazw ma IPv6 domyślnie włączone (ustawienie jądra, nie Mininetu)
+#- niepotrzebny szum przez ogłoszenia sąsiedztwa itp
 IPV6_OFF = (
     "sysctl -qw net.ipv6.conf.all.disable_ipv6=1 "
     "net.ipv6.conf.default.disable_ipv6=1 "
@@ -89,7 +94,7 @@ OFFLOADS = ("tcp-segmentation-offload", "generic-segmentation-offload", "generic
 #ustawienie WSL dla nowo powstających interfejsów - musi być 1 (sprawdza je build())
 ROOT_V6_DEFAULT = "/proc/sys/net/ipv6/conf/default/disable_ipv6"
 
-#dziedziczymy po klasie host Minineta - host bez IPv6
+#dziedziczymy po klasie host minineta - host bez IPv6
 class LabHost(Host):
 
     # zwykły host Minineta, tylko od razu po utworzeniu wyłącza w sobie IPv6
@@ -98,13 +103,13 @@ class LabHost(Host):
         self.cmd(IPV6_OFF) #wyłączenie IPv6 przy starcie hosta
 
 #dziedziczymy po LabHost - też nie chce IPv6 na routerze
-# Router r0: host z włączonym przekazywaniem pakietów IPv4.
+#Router r0: host z włączonym przekazywaniem pakietów IPv4.
 class LinuxRouter(LabHost):
 
-    # Mininet woła config() przy starcie sieci; po zwykłej konfiguracji włączamy routowanie
+    #mininet woła config() przy starcie sieci; po zwykłej konfiguracji włączamy routowanie
     def config(self, **params):
         result = super().config(**params)
-        self.cmd("sysctl -qw net.ipv4.ip_forward=1") # włączenie przekazywania pakietów IPv4
+        self.cmd("sysctl -qw net.ipv4.ip_forward=1") #włączenie przekazywania pakietów IPv4
         return result
 
 #opóźnienia łączy w ms: dostępowe (host-switch) i WAN (r0-s5, "Internet")
@@ -113,7 +118,7 @@ LAN_DELAY_MS = 1.0
 WAN_DELAY_MS = 20.0
 
 
-# Zbuduj sieć, ale jej jeszcze nie uruchamiaj.
+#Zbuduj sieć, ale jej jeszcze nie uruchamiaj.
 def build():
     #porty switchy dostaną IPv6, jeśli w WSL brakuje ustawienia z install_wsl_packages.sh
     with open(ROOT_V6_DEFAULT) as f:
@@ -122,11 +127,13 @@ def build():
                      "(tworzy /etc/sysctl.d/90-lab-ipv6.conf).")
 
     #tworzymy siec bez kontrolera SDN, switche OVS w trybie samouczącym się - klasyczy tryb, hosty bez IPv6, 
-    #poukładane adresy MAC - każde uruchomienie wyglada tak samo.
+    #stałe adresy MAC hostów (autoSetMacs ustawia tylko domyślny interfejs hosta; pozostałe interfejsy r0
+    #i porty switchy dostają losowy MAC od jądra - w nagraniu z -Q in widać tylko MAC nadawcy).
     net = Mininet(controller=None, switch=OVSBridge, host=LabHost, link=Link, autoSetMacs=True)
     first_gateway = SEGMENTS["biuro"][3]
     #dostaje IP bramy segmentu biuro jako pierwszy adres
-    #adres dla pierwszego interfejsu, bo tak działa Mininet - nie chcemy losowego
+    #adres dla pierwszego interfejsu, bo tak działa Mininet - bez ip= dostałby kolejny adres z ipBase
+    #(10.0.0.1/8) i nadpisałby bramę biura
     r0 = net.addHost("r0", cls=LinuxRouter, ip=f"{first_gateway}/24")
     
 
@@ -145,7 +152,7 @@ def build():
             r0, #do routera
             intfName2=router_interface, #np. r0-eth0, r0-eth1 itp
             params2={"ip": f"{gateway}/{prefix}"}, #ten int ma adres bramy segmentu
-            **link_options,
+            **link_options, #dokleja opcje łącza
         )
 
     #pętla po hostach - kazdy host dostaje swój adres IP/prefix i domyślną bramę
@@ -156,7 +163,7 @@ def build():
 
         #dla każdego hosta dodajemy łącze z odpowiednim switchem (z opóźnieniem LAN)
         net.addLink(host, switches[segment], cls=TCLink, delay=f"{LAN_DELAY_MS}ms") #host zawsze ma opóznienie LAN
-    return net
+    return net #zwraca zbudowaną ale jeszcze nie uruchomioną siec
 
 #generator(yield) - przechodzi po wszystkich interfejsach wszystkich hostow i switchy pomijając loopback
 #dzięki temu dwie funckje (offloading, test offloadingu) nie powtarzają tej samej pętli
@@ -193,10 +200,8 @@ def run_cli(net):
     finally:
         setLogLevel("warning")
 
-# tcpdump z Ubuntu (pakiet tcpdump, 4.99.1), podany ścieżką. Instalacja nProbe dołożyła pakiet pfring
-# z własnym tcpdump 4.99.4 w /usr/local/bin, który w PATH roota wygrywał z /usr/bin; sesje M0-M6
-# z 4-5.11.2026 nagrał najpewniej ten drugi (ta sama libpcap 1.10.1 i ten sam format pliku).
-# Ścieżka usuwa tę zależność od PATH: nagrywa zawsze ta sama wersja co po świeżej instalacji.
+#tcpdump z pakietu Ubuntu (wersja 4.99.1), podany pełną ścieżką, żeby nagrania i testy
+#robiła zawsze ta sama wersja; nim nagrano sesje M0-M6 z 20-21.11.2026
 TCPDUMP = "/usr/bin/tcpdump"
 
 
@@ -222,6 +227,8 @@ def run_checks(net):
     #potem zatrzymuje nagrywanie, gdy strata pingall = 0 to przekazywanie pakietów dziala
     r0 = net.get("r0") #zwraca obiekt r0 z sieci
     pcap = "/tmp/topology_ipv6.pcap"
+    if os.path.exists(pcap):
+        os.remove(pcap) #stare nagranie nie może dać fałszywego OK, gdy tcpdump nie ruszy
     cap = r0.popen([TCPDUMP, "-i", "any", "-nn", "-U", "-w", pcap, "ip6"],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) #nie zaśmiecam ekranu logami
     results["pingall_loss_pct"] = net.pingAll(timeout="1")
@@ -236,7 +243,8 @@ def run_checks(net):
     #każdy host musi mieć disable_ipv6 = 1 we własnej przestrzeni nazw
     results["ipv6_on_hosts"] = [host.name for host in net.hosts
                                 if host.cmd("cat /proc/sys/net/ipv6/conf/all/disable_ipv6").strip() != "1"]
-    checks["ipv6_off"] = results["ipv6_packets_on_r0"] == 0 and not results["ipv6_on_hosts"]
+    checks["ipv6_off"] = (os.path.exists(pcap) and results["ipv6_packets_on_r0"] == 0
+                          and not results["ipv6_on_hosts"])
 
    
     results["offload_on"] = [f"{name}:{k}" for node, name in lab_interfaces(net)
@@ -251,7 +259,7 @@ def run_checks(net):
     results["rtt_lan_expected_ms"] = 4 * LAN_DELAY_MS # dwa łącza tam i z powrotem,
     results["rtt_wan_expected_ms"] = 2 * (2 * LAN_DELAY_MS + WAN_DELAY_MS)
 
-    # dopuszczamy odchylenie 1ms lub 30%  oczekiwanej
+    #dopuszczam odchylenie 1ms lub 30%  oczekiwanej
     def close(measured, expected):
         return measured is not None and abs(measured - expected) <= max(1.0, 0.3 * expected)
 
@@ -303,7 +311,7 @@ def main():
         print(json.dumps(results, indent=2, ensure_ascii=False))
         for name, passed in checks.items():
             print(f"{'OK  ' if passed else 'BŁĄD'} {name}") #wynik testów
-        ok = all(checks.values()) #program konczy sie kodem 0
+        ok = all(checks.values()) #kod wyjścia 0 tylko wtedy, gdy wszystkie testy przeszły
         if args.cli:
             run_cli(net)
     finally: # wykona sie zawsze

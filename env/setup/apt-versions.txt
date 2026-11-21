@@ -1,5 +1,6 @@
-# Wersje pakietów apt środowiska, w którym nagrano sesje M0-M6 (4-5.11.2026) i policzono wyniki.
-# Odczyt: dpkg-query w WSL2, Ubuntu 22.04.5 LTS, jądro 6.18.54.1-microsoft-standard-WSL2, 11.11.2026.
+# Wersje pakietów apt środowiska, w którym nagrano sesje M0-M6 (20-21.11.2026) i policzono wyniki.
+# Odczyt: dpkg-query w WSL2, Ubuntu 22.04.5 LTS, jądro 6.18.54.1-microsoft-standard-WSL2, 11.11.2026;
+# zgodność sprawdzona ponownie check_versions.sh 20.11.2026.
 # Skrypty instalacyjne nie przypinają tych wersji (pakiet=wersja), bo Ubuntu usuwa z repozytorium
 # starsze wersje po aktualizacji bezpieczeństwa i instalacja by się nie udała. Zamiast tego
 # env/setup/check_versions.sh porównuje zainstalowane wersje z tym plikiem i wypisuje różnice.
